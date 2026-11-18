@@ -8,7 +8,8 @@ struct BackupBootstrapTests {
     func waitsWhileICloudDriveIsUnavailable(localWasEmpty: Bool?) {
         // Without iCloud Drive we cannot know whether a backup exists, so nothing is decided yet.
         #expect(BackupBootstrap.decide(
-            isAvailable: false, hasBackup: true, localIsEmpty: true, localWasEmptyAtFirstCheck: localWasEmpty
+            isAvailable: false, hasBackup: true, localIsEmpty: true, localWasEmptyAtFirstCheck: localWasEmpty,
+            hasOwnBackup: false
         ) == .wait)
     }
 
@@ -16,37 +17,54 @@ struct BackupBootstrapTests {
     func withoutABackupThereIsNothingToRestore(localWasEmpty: Bool?) {
         // No backup to lose or to restore: start backing up this Mac right away.
         #expect(BackupBootstrap.decide(
-            isAvailable: true, hasBackup: false, localIsEmpty: true, localWasEmptyAtFirstCheck: localWasEmpty
+            isAvailable: true, hasBackup: false, localIsEmpty: true, localWasEmptyAtFirstCheck: localWasEmpty,
+            hasOwnBackup: false
         ) == .done)
     }
 
     @Test(arguments: [true, false])
-    func aMacThatHadDataAtTheFirstCheckKeepsIt(localIsEmpty: Bool) {
-        // An existing Mac's data wins; it is never replaced automatically.
+    func aMacThatHadDataAtTheFirstCheckAndBacksItselfUpKeepsIt(localIsEmpty: Bool) {
+        // An existing Mac's data wins; it is never replaced automatically. The backup is its own,
+        // so the automatic backup only updates it.
         #expect(BackupBootstrap.decide(
-            isAvailable: true, hasBackup: true, localIsEmpty: localIsEmpty, localWasEmptyAtFirstCheck: false
+            isAvailable: true, hasBackup: true, localIsEmpty: localIsEmpty, localWasEmptyAtFirstCheck: false,
+            hasOwnBackup: true
         ) == .done)
+    }
+
+    @Test(arguments: [true, false])
+    func anotherMacsBackupIsNotOverwrittenWithoutTheUserChoosing(localIsEmpty: Bool) {
+        // A new Mac that copied things before iCloud Drive was available holds a few items, while the
+        // backup it finds is another Mac's full history: the automatic backup must not replace it, and
+        // this Mac's data must not be replaced either. Only the user can choose which one wins.
+        #expect(BackupBootstrap.decide(
+            isAvailable: true, hasBackup: true, localIsEmpty: localIsEmpty, localWasEmptyAtFirstCheck: false,
+            hasOwnBackup: false
+        ) == .awaitUser)
     }
 
     @Test(arguments: [nil, true] as [Bool?])
     func anEmptyMacRestoresTheBackup(localWasEmpty: Bool?) {
         // A new Mac picks up the existing backup instead of overwriting it with nothing.
         #expect(BackupBootstrap.decide(
-            isAvailable: true, hasBackup: true, localIsEmpty: true, localWasEmptyAtFirstCheck: localWasEmpty
+            isAvailable: true, hasBackup: true, localIsEmpty: true, localWasEmptyAtFirstCheck: localWasEmpty,
+            hasOwnBackup: false
         ) == .restore)
     }
 
     @Test func aMacThatCopiedThingsSinceTheFirstCheckWaitsForTheUser() {
         // A Mac that copied things while iCloud was downloading must never lose them automatically.
         #expect(BackupBootstrap.decide(
-            isAvailable: true, hasBackup: true, localIsEmpty: false, localWasEmptyAtFirstCheck: true
+            isAvailable: true, hasBackup: true, localIsEmpty: false, localWasEmptyAtFirstCheck: true,
+            hasOwnBackup: false
         ) == .awaitUser)
     }
 
     @Test func aMacWithDataAtTheFirstAvailableCheckIsNotRestoredOver() {
         // Nothing recorded yet and local data present: never restore over it.
         #expect(BackupBootstrap.decide(
-            isAvailable: true, hasBackup: true, localIsEmpty: false, localWasEmptyAtFirstCheck: nil
+            isAvailable: true, hasBackup: true, localIsEmpty: false, localWasEmptyAtFirstCheck: nil,
+            hasOwnBackup: false
         ) == .awaitUser)
     }
 }

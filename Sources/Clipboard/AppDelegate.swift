@@ -291,8 +291,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Runs the first-launch decision (`BackupBootstrap`) at launch and on every hourly tick until it is done.
     /// Whether this Mac was empty is recorded at the first check where iCloud Drive is available and kept
     /// across retries and relaunches. An empty Mac restores the backup (retried until it succeeds, e.g. once
-    /// iCloud finishes downloading); a Mac that has copied things since that check waits for the user to
-    /// choose "Restore" or "Back Up Now". While it is not done no automatic backup runs.
+    /// iCloud finishes downloading); a Mac with data that has never made or restored a backup itself waits
+    /// for the user to choose "Restore" or "Back Up Now". While it is not done no automatic backup runs.
     private func restoreOnFirstLaunchIfNeeded() {
         guard !isBackupBootstrapDone else {
             return
@@ -334,7 +334,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             isAvailable: backup.isAvailable,
             hasBackup: backup.hasBackup,
             localIsEmpty: isLocalEmpty,
-            localWasEmptyAtFirstCheck: localWasEmptyAtFirstCheck
+            localWasEmptyAtFirstCheck: localWasEmptyAtFirstCheck,
+            hasOwnBackup: lastBackupDate != nil
         )
     }
 
