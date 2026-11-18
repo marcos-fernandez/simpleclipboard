@@ -49,6 +49,80 @@ struct FilePersistenceTests {
         #expect(String(decoding: backup, as: UTF8.self) == "not json")
     }
 
+    @Test func fileThatExistsButCannotBeReadIsMovedAsideNotOverwritten() throws {
+        // A read failure is not "no history": treating it as empty would let the next save
+        // replace the user's history with an empty list.
+        let historyURL = directory.appendingPathComponent("history.json")
+        try FileManager.default.createDirectory(at: historyURL, withIntermediateDirectories: false)
+        let persistence = FilePersistence(directory: directory)
+
+        #expect(persistence.load().isEmpty)
+        persistence.save([makeItem("new")])
+
+        var isDirectory: ObjCBool = false
+        let backupPath = directory.appendingPathComponent("history.json.bak").path
+        #expect(FileManager.default.fileExists(atPath: backupPath, isDirectory: &isDirectory))
+        #expect(isDirectory.boolValue)
+        #expect(FilePersistence(directory: directory).load().map(\.text) == ["new"])
+    }
+
+    @Test func repeatedCorruptionNeverDeletesAnEarlierBackup() throws {
+        // The first .bak may be the only copy of the user's history; a later corruption
+        // (even within the same second) must be kept next to it, not replace it.
+        let historyURL = directory.appendingPathComponent("history.json")
+        for content in ["first", "second", "third"] {
+            try Data(content.utf8).write(to: historyURL)
+            #expect(FilePersistence(directory: directory).load().isEmpty)
+        }
+
+        let backups = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix("history.json.bak") }
+        let contents = try backups.map { name in
+            String(decoding: try Data(contentsOf: directory.appendingPathComponent(name)), as: UTF8.self)
+        }
+        #expect(backups.contains("history.json.bak"))
+        #expect(Set(contents) == ["first", "second", "third"])
+    }
+
+    @Test func fileThatCannotBeMovedAsideIsNotOverwrittenBySave() throws {
+        // If the damaged file stays in place, saving would destroy it: the user's data wins
+        // over recording new copies until the file can be dealt with.
+        let historyURL = directory.appendingPathComponent("history.json")
+        try Data("not json".utf8).write(to: historyURL)
+        let persistence = FilePersistence(directory: directory)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        #expect(persistence.load().isEmpty)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        persistence.save([makeItem("new")])
+
+        #expect(String(decoding: try Data(contentsOf: historyURL), as: UTF8.self) == "not json")
+    }
+
+    @Test func savingResumesOnceTheUnmovableFileIsGone() throws {
+        // Refusing to save is only a guard for the damaged file, not a permanent stop.
+        let historyURL = directory.appendingPathComponent("history.json")
+        try Data("not json".utf8).write(to: historyURL)
+        let persistence = FilePersistence(directory: directory)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        _ = persistence.load()
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+
+        try FileManager.default.removeItem(at: historyURL)
+        #expect(persistence.load().isEmpty)
+        persistence.save([makeItem("new")])
+
+        #expect(FilePersistence(directory: directory).load().map(\.text) == ["new"])
+    }
+
     @Test func imagesAreWrittenReadAndPrunedByName() throws {
         let persistence = FilePersistence(directory: directory)
         try persistence.writeImage(Data([1, 2, 3]), named: "keep.png")

@@ -10,6 +10,8 @@ public final class FilePersistence: HistoryPersistence {
     private let tagsBackupURL: URL
     private let imagesDirectory: URL
     private let fileManager = FileManager.default
+    /// Files that exist but could not be read nor moved aside (see `moveAside`).
+    private var unsafeToSave: Set<URL> = []
 
     public init(directory: URL) {
         historyURL = directory.appendingPathComponent("history.json")
@@ -55,22 +57,62 @@ public final class FilePersistence: HistoryPersistence {
         }
     }
 
-    /// A corrupt file is moved to `backup` so the app starts empty instead of failing.
+    /// A missing file means nothing is stored yet. A file that exists but cannot be read or decoded is moved aside
+    /// (`movingCorruptTo` or a unique sibling, never over an earlier one) so the app starts empty instead of failing,
+    /// and the next save does not overwrite the user's data.
     private func loadArray<Element: Decodable>(from url: URL, movingCorruptTo backup: URL) -> [Element] {
-        guard let data = try? Data(contentsOf: url) else {
+        guard fileManager.fileExists(atPath: url.path) else {
+            unsafeToSave.remove(url)
             return []
         }
         do {
-            return try JSONDecoder().decode([Element].self, from: data)
+            let data = try Data(contentsOf: url)
+            let elements = try JSONDecoder().decode([Element].self, from: data)
+            unsafeToSave.remove(url)
+            return elements
         } catch {
-            Self.logger.error("\(url.lastPathComponent, privacy: .public) is corrupt, moving it to .bak: \(error.localizedDescription, privacy: .public)")
-            try? fileManager.removeItem(at: backup)
-            try? fileManager.moveItem(at: url, to: backup)
+            let nsError = error as NSError
+            Self.logger.error("\(url.lastPathComponent, privacy: .public) is unreadable (\(nsError.domain, privacy: .public) \(nsError.code, privacy: .public)), moving it aside")
+            moveAside(url, preferring: backup)
             return []
         }
     }
 
+    /// If the file cannot be moved, saving to its path is refused until a later load succeeds: an empty history
+    /// written over it would destroy what the user had.
+    private func moveAside(_ url: URL, preferring backup: URL) {
+        let target = fileManager.fileExists(atPath: backup.path)
+            ? uniqueSibling(of: backup)
+            : backup
+        do {
+            try fileManager.moveItem(at: url, to: target)
+            Self.logger.notice("Moved \(url.lastPathComponent, privacy: .public) to \(target.lastPathComponent, privacy: .public)")
+        } catch {
+            let nsError = error as NSError
+            Self.logger.fault("Cannot move \(url.lastPathComponent, privacy: .public) aside (\(nsError.domain, privacy: .public) \(nsError.code, privacy: .public)), not saving over it")
+            unsafeToSave.insert(url)
+        }
+    }
+
+    /// `<name>-yyyyMMdd-HHmmss`, plus a random suffix when that is taken too, so an earlier backup is never deleted.
+    private func uniqueSibling(of url: URL) -> URL {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let stamped = url.deletingLastPathComponent()
+            .appendingPathComponent("\(url.lastPathComponent)-\(formatter.string(from: Date()))")
+        guard fileManager.fileExists(atPath: stamped.path) else {
+            return stamped
+        }
+        return stamped.deletingLastPathComponent()
+            .appendingPathComponent("\(stamped.lastPathComponent)-\(UUID().uuidString.prefix(8))")
+    }
+
     private func saveArray<Element: Encodable>(_ elements: [Element], to url: URL) {
+        guard !unsafeToSave.contains(url) else {
+            Self.logger.error("Not saving \(url.lastPathComponent, privacy: .public): the unreadable file is still there")
+            return
+        }
         do {
             let data = try JSONEncoder().encode(elements)
             try data.write(to: url, options: .atomic)
