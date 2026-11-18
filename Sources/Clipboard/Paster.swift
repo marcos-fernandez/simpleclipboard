@@ -65,10 +65,12 @@ enum Paster {
         let source = CGEventSource(stateID: .combinedSessionState)
         // NX_DEVICELCMDKEYMASK: tells receivers it was the left ⌘ key, as real hardware does.
         let commandFlags = CGEventFlags(rawValue: CGEventFlags.maskCommand.rawValue | 0x0000_0008)
+        // Resolved per paste so it matches the layout active right now.
+        let keyV = KeyboardLayout.keyCodeForV()
         let keys: [(CGKeyCode, Bool, CGEventFlags)] = [
             (CGKeyCode(kVK_Command), true, commandFlags),
-            (CGKeyCode(kVK_ANSI_V), true, commandFlags),
-            (CGKeyCode(kVK_ANSI_V), false, commandFlags),
+            (keyV, true, commandFlags),
+            (keyV, false, commandFlags),
             (CGKeyCode(kVK_Command), false, []),
         ]
         for (keyCode, keyDown, flags) in keys {

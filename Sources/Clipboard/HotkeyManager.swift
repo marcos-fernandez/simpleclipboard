@@ -1,6 +1,7 @@
 import Carbon.HIToolbox
 
 /// Global ⇧⌘V via Carbon; needs no Accessibility permission.
+/// "V" is the key that types "v" in the layout active at registration, not the physical ANSI V key.
 @MainActor
 final class HotkeyManager {
     private let onPress: @MainActor () -> Void
@@ -36,8 +37,9 @@ final class HotkeyManager {
             return false
         }
         let hotKeyID = EventHotKeyID(signature: OSType(0x434C_4950), id: 1) // 'CLIP'
+        // The "v" key is resolved once, for the layout active now; a later layout switch is not followed.
         let status = RegisterEventHotKey(
-            UInt32(kVK_ANSI_V),
+            UInt32(KeyboardLayout.keyCodeForV()),
             UInt32(cmdKey | shiftKey),
             hotKeyID,
             GetApplicationEventTarget(),
