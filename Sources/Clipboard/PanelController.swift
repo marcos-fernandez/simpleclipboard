@@ -80,6 +80,12 @@ final class PanelState {
     func submitPrompt(in store: HistoryStore) {
         switch overlay {
         case .newTag(let itemID):
+            // The item can expire or be deleted from another Mac while the prompt is open; a tag created
+            // then would be left with no items.
+            guard store.items.contains(where: { $0.id == itemID }) else {
+                overlay = nil
+                return
+            }
             let colorIndex = store.tags.count % Config.tagColorCount
             guard let tag = store.createTag(name: promptText, colorIndex: colorIndex) else {
                 return
