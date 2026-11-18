@@ -1,0 +1,100 @@
+import Foundation
+
+/// What one Mac publishes as iCloud Drive/SimpleClipboard/Sync/devices/<deviceID>.json. Only that Mac writes it.
+public struct SyncState: Codable, Equatable, Sendable {
+    /// A file with a higher version comes from a newer app on another Mac and is not read.
+    public static let currentVersion = 1
+    /// Stands for "never changed" in data saved before sync existed (2001-01-01). Never `createdAt`: it changes on
+    /// every re-copy and would make an old "no tag" look newer than a real tag change.
+    public static let unstamped = Date(timeIntervalSinceReferenceDate: 0)
+
+    public var version: Int
+    public var deviceID: String
+    public var publishedAt: Date
+    public var items: [SyncItem]
+    public var tags: [SyncTag]
+    /// This Mac's own deletions of the last `Config.syncRetention`.
+    public var deletions: [SyncDeletion]
+
+    public init(
+        version: Int = SyncState.currentVersion,
+        deviceID: String,
+        publishedAt: Date,
+        items: [SyncItem],
+        tags: [SyncTag],
+        deletions: [SyncDeletion]
+    ) {
+        self.version = version
+        self.deviceID = deviceID
+        self.publishedAt = publishedAt
+        self.items = items
+        self.tags = tags
+        self.deletions = deletions
+    }
+}
+
+/// An item as other Macs see it: no local ID, never concealed.
+public struct SyncItem: Codable, Equatable, Sendable {
+    public var contentHash: String
+    public var kind: ClipItem.Kind
+    public var text: String?
+    public var imageFileName: String?
+    public var createdAt: Date
+    public var sourceAppBundleID: String?
+    public var sourceAppName: String?
+    public var tagID: UUID?
+    public var tagChangedAt: Date
+
+    public init(
+        contentHash: String,
+        kind: ClipItem.Kind,
+        text: String?,
+        imageFileName: String?,
+        createdAt: Date,
+        sourceAppBundleID: String?,
+        sourceAppName: String?,
+        tagID: UUID?,
+        tagChangedAt: Date
+    ) {
+        self.contentHash = contentHash
+        self.kind = kind
+        self.text = text
+        self.imageFileName = imageFileName
+        self.createdAt = createdAt
+        self.sourceAppBundleID = sourceAppBundleID
+        self.sourceAppName = sourceAppName
+        self.tagID = tagID
+        self.tagChangedAt = tagChangedAt
+    }
+
+    public init(_ item: ClipItem) {
+        self.init(
+            contentHash: item.contentHash, kind: item.kind, text: item.text, imageFileName: item.imageFileName,
+            createdAt: item.createdAt, sourceAppBundleID: item.sourceAppBundleID, sourceAppName: item.sourceAppName,
+            tagID: item.tagID, tagChangedAt: item.tagChangedAt ?? SyncState.unstamped
+        )
+    }
+
+    /// A deletion only removes an item it happened after: copying or tagging it again later brings it back.
+    var lastChange: Date {
+        max(createdAt, tagChangedAt)
+    }
+}
+
+public struct SyncTag: Codable, Equatable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var colorIndex: Int
+    public var changedAt: Date
+
+    public init(id: UUID, name: String, colorIndex: Int, changedAt: Date) {
+        self.id = id
+        self.name = name
+        self.colorIndex = colorIndex
+        self.changedAt = changedAt
+    }
+
+    public init(_ tag: Tag) {
+        self.init(id: tag.id, name: tag.name, colorIndex: tag.colorIndex, changedAt: tag.changedAt ?? SyncState.unstamped)
+    }
+}

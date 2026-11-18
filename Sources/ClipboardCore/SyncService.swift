@@ -1,0 +1,331 @@
+import Foundation
+import os
+
+public enum SyncError: Error, Equatable {
+    case iCloudUnavailable
+}
+
+/// Where sync stands, for the menu.
+public enum SyncStatus: Equatable, Sendable {
+    case off
+    case iCloudUnavailable
+    case synced(Date)
+    /// Another Mac publishes a newer format; its file is skipped until this Mac is updated.
+    case newerVersionElsewhere
+    /// This Mac's file or images could not be written; retried next round.
+    case writeFailed
+    /// First sync on this Mac and a file of another Mac cannot be read yet (not downloaded, or corrupt): nothing is
+    /// merged or published until every file reads, or this Mac would publish its tags with IDs the other Mac does not
+    /// know and both would end up with the same tag twice. Retried next round.
+    case waitingForOtherMacs
+}
+
+/// This Mac's sync settings, in sync.json next to history.json. Not part of the backup (`BackupService` copies
+/// history.json, tags.json and images/ only), so restoring on another Mac never copies the device ID.
+struct SyncSettings: Codable, Equatable {
+    var isEnabled = false
+    var deviceID: String?
+    /// Set after the first round that read every other Mac: tags are adopted by name only before it.
+    var hasJoined = false
+    var deletions: [SyncDeletion] = []
+}
+
+/// Keeps this Mac in sync with the others through iCloud Drive/SimpleClipboard/Sync/: each Mac writes only its own
+/// devices/<id>.json and adds the images it has to images/, then merges what the others published (`SyncMerge`).
+/// No file has two writers, so iCloud Drive never makes conflict copies.
+/// Synchronous by design, like `BackupService`: it runs on the main actor so the store cannot change mid-round.
+@MainActor
+public final class SyncService {
+    private static let logger = Logger(subsystem: Config.bundleID, category: "SyncService")
+
+    private struct RemoteRead {
+        var states: [SyncState] = []
+        /// False when some file could not be read this round: then no image can be judged unused.
+        var allRead = true
+        var newerVersion = false
+    }
+
+    private struct VersionOnly: Decodable {
+        let version: Int
+    }
+
+    private let iCloudDriveRoot: URL
+    private let devicesDirectory: URL
+    private let imagesDirectory: URL
+    private let localImagesDirectory: URL
+    private let settingsURL: URL
+    private let now: () -> Date
+    private let fileManager = FileManager.default
+    private var settings: SyncSettings
+    /// Decoded files of other Macs with the modification date they had: an unchanged file is not decoded again.
+    private var cache: [String: (modified: Date, state: SyncState)] = [:]
+    /// What this Mac last published and when, to skip rewriting an unchanged file.
+    private var lastPublished: (state: SyncState, at: Date)?
+
+    public init(localDirectory: URL, iCloudDriveRoot: URL, now: @escaping () -> Date = Date.init) {
+        self.iCloudDriveRoot = iCloudDriveRoot
+        self.now = now
+        let syncDirectory = iCloudDriveRoot
+            .appendingPathComponent(Config.appName, isDirectory: true)
+            .appendingPathComponent("Sync", isDirectory: true)
+        devicesDirectory = syncDirectory.appendingPathComponent("devices", isDirectory: true)
+        imagesDirectory = syncDirectory.appendingPathComponent("images", isDirectory: true)
+        localImagesDirectory = localDirectory.appendingPathComponent("images", isDirectory: true)
+        settingsURL = localDirectory.appendingPathComponent("sync.json")
+        settings = (try? Data(contentsOf: settingsURL))
+            .flatMap { try? JSONDecoder().decode(SyncSettings.self, from: $0) }
+            ?? SyncSettings()
+    }
+
+    public var isAvailable: Bool {
+        fileManager.fileExists(atPath: iCloudDriveRoot.path)
+    }
+
+    public var isEnabled: Bool {
+        settings.isEnabled
+    }
+
+    /// Turns sync on. The device ID is created the first time and kept from then on.
+    public func enable() throws {
+        guard isAvailable else {
+            throw SyncError.iCloudUnavailable
+        }
+        settings.isEnabled = true
+        if settings.deviceID == nil {
+            settings.deviceID = UUID().uuidString
+        }
+        saveSettings()
+    }
+
+    /// Stops reading and writing. This Mac's file stays in iCloud Drive; enabling again reuses the same ID.
+    public func disable() {
+        settings.isEnabled = false
+        saveSettings()
+    }
+
+    /// The deletions of one store operation that other Macs must apply (`HistoryStore.deletionRecorder`). Kept
+    /// `Config.syncRetention`, across relaunches. Saved once however many there are: clearing a full history would
+    /// otherwise rewrite sync.json (which holds up to 90 days of deletions) once per item, on the main thread.
+    public func record(_ deletions: [SyncDeletion]) {
+        settings.deletions = liveDeletions() + deletions
+        saveSettings()
+    }
+
+    /// One round: read the other Macs, merge into the store, publish this Mac. A file that cannot be read never
+    /// counts as empty, so it never deletes local data.
+    @discardableResult
+    public func sync(_ store: HistoryStore) -> SyncStatus {
+        guard settings.isEnabled, let deviceID = settings.deviceID else {
+            return .off
+        }
+        guard isAvailable else {
+            return .iCloudUnavailable
+        }
+        let remote = readRemoteStates(excluding: deviceID)
+        // Tags are adopted by name only from files that were read, and publishing before that would give the other
+        // Mac tags it can never remove (absence is not a deletion). `readRemoteStates` already asked for the downloads.
+        if !settings.hasJoined, !remote.allRead {
+            return remote.newerVersion
+                ? .newerVersionElsewhere
+                : .waitingForOtherMacs
+        }
+        let snapshot = store.syncSnapshot()
+        var local = SyncState(
+            deviceID: deviceID, publishedAt: now(), items: snapshot.items, tags: snapshot.tags, deletions: liveDeletions()
+        )
+        if !settings.hasJoined {
+            local = SyncMerge.adoptingRemoteTags(local, remotes: remote.states, now: now())
+        }
+        var result = SyncMerge.merge(local: local, remotes: remote.states, concealedHashes: store.concealedHashes, now: now())
+        result.items = result.items.filter(ensureLocalImage)
+        store.applySync(result)
+        do {
+            try publish(deviceID: deviceID, store: store)
+        } catch {
+            let code = error as NSError
+            Self.logger.error("Sync publish failed: \(code.domain, privacy: .public) \(code.code, privacy: .public)")
+            return .writeFailed
+        }
+        if remote.allRead {
+            if !settings.hasJoined {
+                settings.hasJoined = true
+                saveSettings()
+            }
+            let used = (remote.states.flatMap(\.items) + store.syncSnapshot().items).compactMap(\.imageFileName)
+            removeUnusedImages(used: Set(used))
+        }
+        guard !remote.newerVersion else {
+            return .newerVersionElsewhere
+        }
+        return .synced(now())
+    }
+
+    // MARK: private
+
+    private func liveDeletions() -> [SyncDeletion] {
+        let current = now()
+        return settings.deletions.filter { current.timeIntervalSince($0.deletedAt) <= Config.syncRetention }
+    }
+
+    private func saveSettings() {
+        do {
+            try JSONEncoder().encode(settings).write(to: settingsURL, options: .atomic)
+        } catch {
+            let code = error as NSError
+            Self.logger.error("Cannot save sync.json: \(code.domain, privacy: .public) \(code.code, privacy: .public)")
+        }
+    }
+
+    /// Files of other Macs. One not downloaded yet is requested and its last decoded version used meanwhile; a
+    /// corrupt one or one with a newer format is skipped this round.
+    private func readRemoteStates(excluding deviceID: String) -> RemoteRead {
+        var read = RemoteRead()
+        let names = (try? fileManager.contentsOfDirectory(atPath: devicesDirectory.path)) ?? []
+        for name in names where name.hasSuffix(".json") && !name.hasPrefix(".") && name != "\(deviceID).json" {
+            let file = devicesDirectory.appendingPathComponent(name)
+            let remoteID = String(name.dropLast(".json".count))
+            guard isDownloaded(file) else {
+                try? fileManager.startDownloadingUbiquitousItem(at: file)
+                read.allRead = false
+                if let cached = cache[remoteID] {
+                    read.states.append(cached.state)
+                }
+                continue
+            }
+            let modified = (try? fileManager.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date ?? .distantPast
+            if let cached = cache[remoteID], cached.modified == modified {
+                read.states.append(cached.state)
+                continue
+            }
+            do {
+                let data = try Data(contentsOf: file)
+                guard try JSONDecoder().decode(VersionOnly.self, from: data).version <= SyncState.currentVersion else {
+                    read.newerVersion = true
+                    read.allRead = false
+                    continue
+                }
+                let state = try JSONDecoder().decode(SyncState.self, from: data)
+                cache[remoteID] = (modified, state)
+                read.states.append(state)
+            } catch {
+                let code = error as NSError
+                Self.logger.error("Skipping unreadable sync file \(name, privacy: .public): \(code.domain, privacy: .public) \(code.code, privacy: .public)")
+                read.allRead = false
+            }
+        }
+        return read
+    }
+
+    /// A text item needs nothing. An image item enters only once its PNG is in the local images folder: copied from
+    /// Sync/images/ when it is there and downloaded, otherwise requested from iCloud and retried next round, so the
+    /// panel never shows an empty card.
+    private func ensureLocalImage(_ item: SyncItem) -> Bool {
+        guard let name = item.imageFileName else {
+            return true
+        }
+        // The name comes from another Mac's file in iCloud Drive: "../history.json" would make the copy write, or
+        // the store read, outside images/. Anything but a plain file name is treated like a missing image.
+        guard !name.isEmpty, !name.hasPrefix("."), !name.contains("/") else {
+            return false
+        }
+        let local = localImagesDirectory.appendingPathComponent(name)
+        if fileManager.fileExists(atPath: local.path) {
+            return true
+        }
+        let shared = imagesDirectory.appendingPathComponent(name)
+        guard fileManager.fileExists(atPath: shared.path) else {
+            return false
+        }
+        guard isDownloaded(shared) else {
+            try? fileManager.startDownloadingUbiquitousItem(at: shared)
+            return false
+        }
+        do {
+            try copyImage(from: shared, to: local)
+            return true
+        } catch {
+            let code = error as NSError
+            Self.logger.error("Cannot copy synced image \(name, privacy: .public): \(code.domain, privacy: .public) \(code.code, privacy: .public)")
+            return false
+        }
+    }
+
+    /// Images first, then the state file, so another Mac rarely waits on an image. An image already in Sync/images/
+    /// is never rewritten: the same name is always the same content. The state file is rewritten only when it
+    /// changed, or once a day (`Config.syncRefreshInterval`) so a quiet Mac is not taken for gone.
+    private func publish(deviceID: String, store: HistoryStore) throws {
+        let snapshot = store.syncSnapshot()
+        let state = SyncState(
+            deviceID: deviceID, publishedAt: now(), items: snapshot.items, tags: snapshot.tags, deletions: liveDeletions()
+        )
+        let file = devicesDirectory.appendingPathComponent("\(deviceID).json")
+        if isUnchanged(state), fileManager.fileExists(atPath: file.path) {
+            return
+        }
+        try fileManager.createDirectory(at: devicesDirectory, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: imagesDirectory, withIntermediateDirectories: true)
+        for name in Set(snapshot.items.compactMap(\.imageFileName)) {
+            let shared = imagesDirectory.appendingPathComponent(name)
+            if !fileManager.fileExists(atPath: shared.path) {
+                try copyImage(from: localImagesDirectory.appendingPathComponent(name), to: shared)
+            }
+        }
+        try JSONEncoder().encode(state).write(to: file, options: .atomic)
+        lastPublished = (state, now())
+    }
+
+    /// Copies through a dot-prefixed temporary name, stamps it with the current time and moves it into place. Two
+    /// reasons. The grace period (`Config.syncImageGrace`) counts from when the image reached iCloud, not from its
+    /// age: `copyItem` keeps the source's modification date, so a backlog image would arrive already older than the
+    /// grace and another Mac that sees the PNG before this Mac's file lists it would delete it at once. And images
+    /// are write-once: a half-written file under its final name would never be replaced. Listing and cleanup skip
+    /// names starting with a dot.
+    private func copyImage(from source: URL, to destination: URL) throws {
+        let temporary = destination.deletingLastPathComponent()
+            .appendingPathComponent(".\(UUID().uuidString)", isDirectory: false)
+        do {
+            try fileManager.copyItem(at: source, to: temporary)
+            try fileManager.setAttributes([.modificationDate: now()], ofItemAtPath: temporary.path)
+            try fileManager.moveItem(at: temporary, to: destination)
+        } catch {
+            try? fileManager.removeItem(at: temporary)
+            throw error
+        }
+    }
+
+    private func isUnchanged(_ state: SyncState) -> Bool {
+        guard let lastPublished, now().timeIntervalSince(lastPublished.at) < Config.syncRefreshInterval else {
+            return false
+        }
+        return lastPublished.state.items == state.items
+            && lastPublished.state.tags == state.tags
+            && lastPublished.state.deletions == state.deletions
+    }
+
+    /// Deletes images no Mac uses, once older than `Config.syncImageGrace`: a new image can arrive before the file
+    /// of the Mac that uses it.
+    private func removeUnusedImages(used: Set<String>) {
+        let current = now()
+        let names = (try? fileManager.contentsOfDirectory(atPath: imagesDirectory.path)) ?? []
+        for name in names where !name.hasPrefix(".") && !used.contains(name) {
+            let file = imagesDirectory.appendingPathComponent(name)
+            let modified = (try? fileManager.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date ?? current
+            if current.timeIntervalSince(modified) > Config.syncImageGrace {
+                try? fileManager.removeItem(at: file)
+            }
+        }
+    }
+
+    /// False only for an iCloud item whose local copy is missing or outdated. From macOS 14 (the minimum) an item that
+    /// is not downloaded keeps its name, so only the downloading status tells; it is nil outside iCloud Drive.
+    /// Same check as `BackupService.isCurrent`.
+    private func isDownloaded(_ file: URL) -> Bool {
+        // A fresh URL: URL caches resource values.
+        let fresh = URL(fileURLWithPath: file.path)
+        let values = try? fresh.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
+        guard let status = values?.ubiquitousItemDownloadingStatus else {
+            return true
+        }
+        return status == .current
+    }
+}
