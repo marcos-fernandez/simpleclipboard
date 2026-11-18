@@ -67,7 +67,7 @@ final class ClipboardMonitor {
         Self.logger.debug("Captured kind=\(item?.kind.rawValue ?? "none", privacy: .public) concealed=\(classification == .concealed)")
     }
 
-    /// Text wins over image : if there is text, kind = .text.
+    /// Text wins over image: if there is text, kind = .text.
     private func readContent() -> ClipContent? {
         if let text = pasteboard.string(forType: .string) {
             return .text(text)
