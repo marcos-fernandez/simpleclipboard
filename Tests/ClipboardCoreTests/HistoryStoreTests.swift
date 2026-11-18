@@ -31,6 +31,55 @@ struct HistoryStoreTests {
         #expect(store.items.isEmpty)
     }
 
+    // Every change rewrites the whole history and republishes it to iCloud, so one huge
+    // item stored once would make every later copy slow. Oversized content is never stored.
+
+    @Test func textOverTheLimitIsNotRecordedNorSaved() {
+        let store = makeStore()
+        let huge = String(repeating: "a", count: Config.maxTextBytes + 1)
+
+        #expect(store.add(.text(huge), source: safari, concealed: false) == nil)
+        #expect(store.items.isEmpty)
+        #expect(persistence.saveCount == 0)
+    }
+
+    @Test func textLimitCountsUTF8BytesNotCharacters() {
+        // What gets written and synced is UTF-8, so "é" (2 bytes) counts twice.
+        let store = makeStore()
+        let accented = String(repeating: "é", count: Config.maxTextBytes / 2 + 1)
+
+        #expect(store.add(.text(accented), source: safari, concealed: false) == nil)
+        #expect(store.items.isEmpty)
+    }
+
+    @Test func textExactlyAtTheLimitIsKept() {
+        // The limit is meant to stop pathological copies, not to cut off a legitimate one at the edge.
+        let store = makeStore()
+        let atLimit = String(repeating: "a", count: Config.maxTextBytes)
+
+        #expect(store.add(.text(atLimit), source: safari, concealed: false) != nil)
+        #expect(store.items.count == 1)
+    }
+
+    @Test func imageOverTheLimitIsNotWrittenNorRecorded() {
+        let store = makeStore()
+        let huge = Data(count: Config.maxImageBytes + 1)
+
+        #expect(store.add(.image(huge), source: safari, concealed: false) == nil)
+        #expect(store.items.isEmpty)
+        #expect(persistence.images.isEmpty)
+        #expect(persistence.saveCount == 0)
+    }
+
+    @Test func imageExactlyAtTheLimitIsKept() {
+        let store = makeStore()
+        let atLimit = Data(count: Config.maxImageBytes)
+
+        #expect(store.add(.image(atLimit), source: safari, concealed: false) != nil)
+        #expect(store.items.count == 1)
+        #expect(persistence.images.count == 1)
+    }
+
     @Test func recopyingMovesTheItemToTheFrontWithoutDuplicating() {
         let store = makeStore()
         store.add(.text("a"), source: safari, concealed: false)

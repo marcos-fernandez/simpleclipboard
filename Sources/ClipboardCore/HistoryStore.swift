@@ -43,6 +43,19 @@ public final class HistoryStore {
 
     @discardableResult
     public func add(_ content: ClipContent, source: SourceApp, concealed: Bool) -> ClipItem? {
+        // Checked before hashing, so a huge copy costs nothing; only the size is logged, never the content.
+        switch content {
+        case .text(let text):
+            guard text.utf8.count <= Config.maxTextBytes else {
+                Self.logger.notice("Dropping text of \(text.utf8.count, privacy: .public) bytes, over the limit")
+                return nil
+            }
+        case .image(let data):
+            guard data.count <= Config.maxImageBytes else {
+                Self.logger.notice("Dropping image of \(data.count, privacy: .public) bytes, over the limit")
+                return nil
+            }
+        }
         let hash = Self.hash(of: content)
         let createdAt = now()
         let expiresAt: Date? = concealed
