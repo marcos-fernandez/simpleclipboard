@@ -93,11 +93,23 @@ struct ClipCardView: View {
         return Self.relativeFormatter.localizedString(for: item.createdAt, relativeTo: date)
     }
 
+    /// Icons by bundle ID: body runs for every visible card on every change, and the NSWorkspace lookup is slow.
+    /// Apps that are not found are cached with the fallback too, so they are not looked up again.
+    @MainActor private static var iconCache: [String: NSImage] = [:]
+    @MainActor private static let fallbackIcon = NSImage(systemSymbolName: "app", accessibilityDescription: nil)
+        ?? NSImage()
+
     private var appIcon: NSImage {
-        if let bundleID = item.sourceAppBundleID,
-           let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-            return NSWorkspace.shared.icon(forFile: url.path)
+        guard let bundleID = item.sourceAppBundleID else {
+            return Self.fallbackIcon
         }
-        return NSImage(systemSymbolName: "app", accessibilityDescription: nil) ?? NSImage()
+        if let cached = Self.iconCache[bundleID] {
+            return cached
+        }
+        let icon = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+            .map { NSWorkspace.shared.icon(forFile: $0.path) }
+            ?? Self.fallbackIcon
+        Self.iconCache[bundleID] = icon
+        return icon
     }
 }
