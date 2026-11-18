@@ -57,4 +57,20 @@ struct PasteboardClassifierTests {
         )
         #expect(result == .concealed)
     }
+
+    @Test func copyFromApplePasswordsAppIsConcealed() {
+        // Apple's Passwords app does not put the concealed marker on the pasteboard, so
+        // without its bundle ID a copied password would be saved as plain text and synced.
+        #expect(PasteboardClassifier.classify(types: plainText, sourceBundleID: "com.apple.Passwords") == .concealed)
+    }
+
+    @Test func copyRightAfterApplePasswordsLostFocusIsStillConcealed() {
+        // Same polling race as with 1Password: focus may already be back on another app.
+        let result = PasteboardClassifier.classify(
+            types: plainText,
+            sourceBundleID: "com.apple.Safari",
+            recentSourceBundleIDs: ["com.apple.Passwords"]
+        )
+        #expect(result == .concealed)
+    }
 }

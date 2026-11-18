@@ -32,6 +32,8 @@ public enum Config {
     public static let concealedSourceBundleIDs: Set<String> = [
         "com.1password.1password",
         "com.agilebits.onepassword7",
+        // Apple's Passwords app (macOS 15+) does not mark its copies as concealed.
+        "com.apple.Passwords",
     ]
     public static let ignoredSourceBundleIDs: Set<String> = [
         "com.apple.keychainaccess",
