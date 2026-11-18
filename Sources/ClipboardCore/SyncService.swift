@@ -28,6 +28,9 @@ struct SyncSettings: Codable, Equatable {
     /// Set after the first round that read every other Mac: tags are adopted by name only before it.
     var hasJoined = false
     var deletions: [SyncDeletion] = []
+    /// The Mac that wrote this file (`MachineID`). Migration Assistant and Time Machine do copy sync.json: a
+    /// different value means the device ID belongs to another Mac. Nil in files written before it existed.
+    var machineID: String?
 }
 
 /// Keeps this Mac in sync with the others through iCloud Drive/SimpleClipboard/Sync/: each Mac writes only its own
@@ -62,7 +65,10 @@ public final class SyncService {
     /// What this Mac last published and when, to skip rewriting an unchanged file.
     private var lastPublished: (state: SyncState, at: Date)?
 
-    public init(localDirectory: URL, iCloudDriveRoot: URL, now: @escaping () -> Date = Date.init) {
+    public init(
+        localDirectory: URL, iCloudDriveRoot: URL, now: @escaping () -> Date = Date.init,
+        machineID: String? = MachineID.current
+    ) {
         self.iCloudDriveRoot = iCloudDriveRoot
         self.now = now
         let syncDirectory = iCloudDriveRoot
@@ -75,6 +81,7 @@ public final class SyncService {
         settings = (try? Data(contentsOf: settingsURL))
             .flatMap { try? JSONDecoder().decode(SyncSettings.self, from: $0) }
             ?? SyncSettings()
+        adopt(machineID: machineID)
     }
 
     public var isAvailable: Bool {
@@ -161,6 +168,31 @@ public final class SyncService {
     }
 
     // MARK: private
+
+    /// Two Macs with the same device ID each skip the other's file as their own and both write it, so they never
+    /// sync. A sync.json copied from another Mac gets a new device ID and joins again like a new Mac; its deletions
+    /// are dropped, since the Mac that made them already publishes them. Sync stays on: a Mac that has not joined
+    /// publishes nothing until it has read every other file, so it cannot overwrite or duplicate anything.
+    /// A file without a machine ID predates it and cannot be judged: it is taken as this Mac's. Without a device ID
+    /// there is nothing to protect yet and nothing is written: `enable()` saves the machine ID with the new ID.
+    private func adopt(machineID: String?) {
+        guard let machineID, settings.machineID != machineID else {
+            return
+        }
+        let copiedFromAnotherMac = settings.machineID != nil
+        settings.machineID = machineID
+        if copiedFromAnotherMac {
+            if settings.deviceID != nil {
+                settings.deviceID = UUID().uuidString
+            }
+            settings.hasJoined = false
+            settings.deletions = []
+        }
+        guard copiedFromAnotherMac || settings.deviceID != nil else {
+            return
+        }
+        saveSettings()
+    }
 
     private func liveDeletions() -> [SyncDeletion] {
         let current = now()

@@ -37,15 +37,24 @@ struct SyncServiceTests {
         clock.current = Date(timeIntervalSinceReferenceDate: 800_000_000)
     }
 
+    /// Each simulated Mac has its own machine ID, so the real one of the Mac running the tests never decides anything.
     func makeMac(_ name: String, enabled: Bool = true) throws -> Mac {
         let directory = root.appendingPathComponent(name, isDirectory: true)
         let store = HistoryStore(persistence: FilePersistence(directory: directory), now: { [clock] in clock.current })
-        let sync = SyncService(localDirectory: directory, iCloudDriveRoot: iCloud, now: { [clock] in clock.current })
+        let sync = makeSync(directory: directory, machineID: name)
         if enabled {
             try sync.enable()
             store.deletionRecorder = { [sync] in sync.record($0) }
         }
         return Mac(directory: directory, store: store, sync: sync)
+    }
+
+    func makeSync(directory: URL, machineID: String) -> SyncService {
+        SyncService(localDirectory: directory, iCloudDriveRoot: iCloud, now: { [clock] in clock.current }, machineID: machineID)
+    }
+
+    func savedSettings(in directory: URL) throws -> SyncSettings {
+        try JSONDecoder().decode(SyncSettings.self, from: Data(contentsOf: directory.appendingPathComponent("sync.json")))
     }
 
     /// Looks under `folder`, by default all of iCloud Drive. `Backup/` is a copy of the history, so a value that was
@@ -116,7 +125,7 @@ struct SyncServiceTests {
         b.round()
         clock.advance(1)
         a.store.removeUntagged()
-        let relaunched = SyncService(localDirectory: a.directory, iCloudDriveRoot: iCloud, now: { [clock] in clock.current })
+        let relaunched = makeSync(directory: a.directory, machineID: "A")
         relaunched.sync(a.store)
         b.round()
         #expect(b.store.items.map(\.text) == ["pinned"])
@@ -384,7 +393,7 @@ struct SyncServiceTests {
         b.round()
         clock.advance(1)
         a.store.remove(id: one.id)
-        let relaunched = SyncService(localDirectory: a.directory, iCloudDriveRoot: iCloud, now: { [clock] in clock.current })
+        let relaunched = makeSync(directory: a.directory, machineID: "A")
         relaunched.sync(a.store)
         b.round()
         #expect(b.store.items.isEmpty)
@@ -478,5 +487,61 @@ struct SyncServiceTests {
         #expect(b.store.items.allSatisfy { $0.tagID == nil })
         // Backup/ legitimately holds the plain-text copy; what sync publishes must not.
         #expect(try !iCloudContains("synthetic-key", in: syncFolder))
+    }
+
+    // Migration Assistant or a Time Machine restore copies the whole data folder, sync.json included. With the same
+    // device ID each Mac would skip the other's file as its own and both would write it, so they would never sync.
+    @Test func aSyncFileCopiedToAnotherMacGetsANewDeviceID() throws {
+        let a = try makeMac("A")
+        a.store.add(.text("one"), source: safari, concealed: false)
+        a.round()
+        let copied = root.appendingPathComponent("B", isDirectory: true)
+        try fileManager.copyItem(at: a.directory, to: copied)
+
+        let bSync = makeSync(directory: copied, machineID: "B")
+        let bStore = HistoryStore(persistence: FilePersistence(directory: copied), now: { [clock] in clock.current })
+        bStore.deletionRecorder = { [bSync] in bSync.record($0) }
+        let b = Mac(directory: copied, store: bStore, sync: bSync)
+        #expect(b.sync.isEnabled)
+        #expect(try savedSettings(in: b.directory).deviceID != savedSettings(in: a.directory).deviceID)
+
+        clock.advance(1)
+        b.store.add(.text("two"), source: safari, concealed: false)
+        b.round()
+        a.round()
+        #expect(a.store.items.map(\.text) == ["two", "one"])
+        #expect(b.store.items.map(\.text) == ["two", "one"])
+        let devices = syncFolder.appendingPathComponent("devices", isDirectory: true)
+        #expect(try fileManager.contentsOfDirectory(atPath: devices.path).count == 2)
+    }
+
+    // A sync.json written before the machine ID existed cannot be told apart from a copy: it is taken as this Mac's,
+    // or every Mac that updates would publish a second file and look like a new Mac to the others.
+    @Test func aSyncFileWithoutMachineIDKeepsItsDeviceID() throws {
+        let a = try makeMac("A")
+        a.round()
+        let settingsURL = a.directory.appendingPathComponent("sync.json")
+        var json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: settingsURL)) as? [String: Any])
+        json["machineID"] = nil
+        try JSONSerialization.data(withJSONObject: json).write(to: settingsURL)
+        let before = try savedSettings(in: a.directory)
+        #expect(before.machineID == nil)
+
+        let relaunched = makeSync(directory: a.directory, machineID: "A")
+        let after = try savedSettings(in: a.directory)
+        #expect(after.deviceID == before.deviceID)
+        #expect(after.hasJoined)
+        #expect(after.machineID == "A")
+        #expect(relaunched.sync(a.store) == .synced(clock.current))
+    }
+
+    // Relaunching on the same Mac must not look like a copy: a new device ID would leave its old file behind as a
+    // Mac that never comes back.
+    @Test func theSameMacKeepsItsDeviceIDAcrossRelaunches() throws {
+        let a = try makeMac("A")
+        a.round()
+        let before = try savedSettings(in: a.directory)
+        _ = makeSync(directory: a.directory, machineID: "A")
+        #expect(try savedSettings(in: a.directory) == before)
     }
 }
