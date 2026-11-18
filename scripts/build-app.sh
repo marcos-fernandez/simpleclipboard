@@ -8,12 +8,14 @@ readonly APP_NAME="SimpleClipboard"
 # SwiftPM executable target (internal name, kept from before the rename).
 readonly PRODUCT_NAME="Clipboard"
 readonly SIGNING_IDENTITY="Clipboard Local Signing"
-readonly ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+readonly ROOT_DIR
 readonly APP_DIR="${ROOT_DIR}/build/${APP_NAME}.app"
 
 cd "${ROOT_DIR}"
 swift build -c release
-readonly BIN_DIR="$(swift build -c release --show-bin-path)"
+BIN_DIR="$(swift build -c release --show-bin-path)"
+readonly BIN_DIR
 
 rm -rf "${APP_DIR}"
 mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"

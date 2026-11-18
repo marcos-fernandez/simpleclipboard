@@ -5,8 +5,10 @@
 # so its directory is passed explicitly.
 set -euo pipefail
 
-readonly ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-readonly PLUGIN_DIR="$(dirname "$(xcrun --find swift)")/../lib/swift/host/plugins/testing"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+readonly ROOT_DIR
+PLUGIN_DIR="$(dirname "$(xcrun --find swift)")/../lib/swift/host/plugins/testing"
+readonly PLUGIN_DIR
 
 cd "${ROOT_DIR}"
 swift test -Xswiftc -plugin-path -Xswiftc "${PLUGIN_DIR}" "$@"

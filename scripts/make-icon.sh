@@ -3,8 +3,10 @@
 # Only needed when the icon design changes; build-app.sh uses the committed .icns.
 set -euo pipefail
 
-readonly ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-readonly WORK_DIR="$(mktemp -d)"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+readonly ROOT_DIR
+WORK_DIR="$(mktemp -d)"
+readonly WORK_DIR
 readonly ICONSET="${WORK_DIR}/AppIcon.iconset"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
