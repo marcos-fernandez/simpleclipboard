@@ -51,6 +51,10 @@ public final class FilePersistence: HistoryPersistence {
     }
 
     public func deleteImages(notIn keep: Set<String>) {
+        // The history that could not be read is still in place and may point to these images.
+        guard !unsafeToSave.contains(historyURL) else {
+            return
+        }
         let names = (try? fileManager.contentsOfDirectory(atPath: imagesDirectory.path)) ?? []
         for name in names where !keep.contains(name) {
             try? fileManager.removeItem(at: imagesDirectory.appendingPathComponent(name))

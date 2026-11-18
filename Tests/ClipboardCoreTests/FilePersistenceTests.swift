@@ -103,6 +103,26 @@ struct FilePersistenceTests {
         #expect(String(decoding: try Data(contentsOf: historyURL), as: UTF8.self) == "not json")
     }
 
+    @Test func imagesAreKeptWhileTheDamagedHistoryIsStillInPlace() throws {
+        // The history left in place may be recovered by hand; deleting the images it points to
+        // (the store asks for that on every save) would leave it pointing at nothing.
+        let historyURL = directory.appendingPathComponent("history.json")
+        try Data("not json".utf8).write(to: historyURL)
+        let persistence = FilePersistence(directory: directory)
+        try persistence.writeImage(Data([1, 2, 3]), named: "a.png")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        #expect(persistence.load().isEmpty)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        persistence.deleteImages(notIn: [])
+
+        #expect(persistence.readImage(named: "a.png") == Data([1, 2, 3]))
+    }
+
     @Test func savingResumesOnceTheUnmovableFileIsGone() throws {
         // Refusing to save is only a guard for the damaged file, not a permanent stop.
         let historyURL = directory.appendingPathComponent("history.json")
