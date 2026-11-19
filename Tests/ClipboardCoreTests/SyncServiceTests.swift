@@ -177,6 +177,103 @@ struct SyncServiceTests {
         #expect(b.store.items.isEmpty)
     }
 
+    // B copies a value from a normal app; before A has merged it, A copies it from 1Password. A had no plain copy to
+    // delete, so nothing was recorded, and once A's concealed copy expired the next round brought B's plain copy
+    // into A's history (and its backup). A value copied from 1Password must become in-memory only everywhere.
+    @Test func aValueCopiedFrom1PasswordRemovesThePlainCopyOfAnotherMac() throws {
+        let a = try makeMac("A")
+        let b = try makeMac("B")
+        b.store.add(.text("synthetic-pw"), source: safari, concealed: false)
+        b.round()
+        clock.advance(1)
+        a.store.add(.text("synthetic-pw"), source: onePassword, concealed: true)
+        a.round()
+        b.round()
+        #expect(b.store.items.isEmpty)
+        clock.advance(Config.concealedLifetime + 60)
+        a.store.purgeExpired()
+        a.round()
+        b.round()
+        #expect(a.store.items.isEmpty)
+        #expect(b.store.items.isEmpty)
+        #expect(try !iCloudContains("synthetic-pw", in: syncFolder))
+        try expectSettled([a, b])
+    }
+
+    // The content hash is an unsalted SHA-256: a deletion for a value no other Mac lists would let anyone who reads
+    // iCloud Drive test guesses at a 1Password secret. Only a hash already published in plain may be recorded.
+    @Test func aConcealedValueNoOtherMacListsPublishesNoDeletion() throws {
+        let a = try makeMac("A")
+        let b = try makeMac("B")
+        b.store.add(.text("visible"), source: safari, concealed: false)
+        b.round()
+        a.store.add(.text("synthetic-secret"), source: onePassword, concealed: true)
+        a.round()
+        b.round()
+        a.round()
+        let devices = syncFolder.appendingPathComponent("devices", isDirectory: true)
+        for name in try fileManager.contentsOfDirectory(atPath: devices.path) {
+            let state = try JSONDecoder().decode(SyncState.self, from: Data(contentsOf: devices.appendingPathComponent(name)))
+            #expect(state.deletions.isEmpty)
+        }
+    }
+
+    // Same, but B's file reaches A only after A's concealed copy expired (iCloud was slow): the plain copy is older
+    // than A's capture and must still not come in.
+    @Test func aPlainCopyThatArrivesAfterTheConcealedOneExpiredStaysOut() throws {
+        let a = try makeMac("A")
+        let b = try makeMac("B")
+        a.round()
+        b.store.add(.text("synthetic-pw"), source: safari, concealed: false)
+        b.round()
+        let devices = syncFolder.appendingPathComponent("devices", isDirectory: true)
+        let bFile = try #require(try fileManager.contentsOfDirectory(atPath: devices.path)
+            .map { devices.appendingPathComponent($0) }
+            .first { try JSONDecoder().decode(SyncState.self, from: Data(contentsOf: $0)).items.isEmpty == false })
+        let hidden = root.appendingPathComponent("hidden.json")
+        try fileManager.moveItem(at: bFile, to: hidden)
+        clock.advance(1)
+        a.store.add(.text("synthetic-pw"), source: onePassword, concealed: true)
+        clock.advance(Config.concealedLifetime + 60)
+        a.store.purgeExpired()
+        a.round()
+        try fileManager.moveItem(at: hidden, to: bFile)
+        a.round()
+        b.round()
+        a.round()
+        #expect(a.store.items.isEmpty)
+        #expect(b.store.items.isEmpty)
+        try expectSettled([a, b])
+    }
+
+    // Decision: a deliberate use of the plain copy on B made after A's capture (B tagged it before it heard of the
+    // capture) wins, as a later copy or tag wins over any deletion. The capture removes what existed before it; it
+    // cannot forbid a value for ever without also losing copies the user makes later on purpose.
+    @Test func aLaterUseOfThePlainCopyOnAnotherMacWins() throws {
+        let a = try makeMac("A")
+        let b = try makeMac("B")
+        let work = try #require(b.store.createTag(name: "Work", colorIndex: 0))
+        let plain = try #require(b.store.add(.text("synthetic-pw"), source: safari, concealed: false))
+        b.round()
+        clock.advance(1)
+        a.store.add(.text("synthetic-pw"), source: onePassword, concealed: true)
+        a.round()
+        clock.advance(1)
+        b.store.setTag(itemID: plain.id, tagID: work.id)
+        b.round()
+        a.round()
+        #expect(b.store.items.map(\.text) == ["synthetic-pw"])
+        #expect(a.store.items.map(\.isConcealed) == [true])
+        // The cost of that choice: once A's concealed copy expires, B's tagged copy is in A's history too, in plain.
+        clock.advance(Config.concealedLifetime + 60)
+        a.store.purgeExpired()
+        a.round()
+        #expect(a.store.items.map(\.text) == ["synthetic-pw"])
+        #expect(a.store.items.map(\.isConcealed) == [false])
+        #expect(a.store.items.map(\.tagID) == [work.id])
+        try expectSettled([a, b])
+    }
+
     @Test func anImageAlreadyInICloudIsNeverRewritten() throws {
         let a = try makeMac("A")
         let item = try #require(a.store.add(.image(Data([1, 2, 3])), source: safari, concealed: false))

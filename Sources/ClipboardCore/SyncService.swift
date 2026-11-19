@@ -156,6 +156,7 @@ public final class SyncService {
                 ? .newerVersionElsewhere
                 : .waitingForOtherMacs
         }
+        recordConcealedCaptures(of: store, listedIn: remote.states)
         let snapshot = store.syncSnapshot()
         var local = SyncState(
             deviceID: deviceID, publishedAt: now(), items: snapshot.items, tags: snapshot.tags, deletions: liveDeletions()
@@ -216,6 +217,26 @@ public final class SyncService {
             return
         }
         saveSettings()
+    }
+
+    /// A value copied as concealed here (`HistoryStore.concealedCaptures`) that another Mac lists in plain is deleted,
+    /// dated at the capture: copies older than it go everywhere and never come back here once the concealed item
+    /// expires; a later copy or tag of it on another Mac wins, as over any deletion. Recorded only once a file lists
+    /// it, so the hash is already in iCloud, and once per capture, so a quiet round records nothing.
+    private func recordConcealedCaptures(of store: HistoryStore, listedIn states: [SyncState]) {
+        let current = now()
+        let listed = Set(states.flatMap(\.items).map(\.contentHash))
+        let deletions = store.concealedCaptures.compactMap { hash, capturedAt -> SyncDeletion? in
+            guard listed.contains(hash),
+                  current.timeIntervalSince(capturedAt) <= Config.syncRetention,
+                  (latestDeletion(ofItem: hash) ?? .distantPast) < capturedAt else {
+                return nil
+            }
+            return .item(hash, at: capturedAt)
+        }
+        if !deletions.isEmpty {
+            record(deletions)
+        }
     }
 
     private func liveDeletions() -> [SyncDeletion] {

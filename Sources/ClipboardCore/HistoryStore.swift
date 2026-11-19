@@ -34,6 +34,11 @@ public final class HistoryStore {
     /// The latest deletion of a content hash this Mac knows of, its own or another Mac's
     /// (`SyncService.latestDeletion(ofItem:)`): a new copy of that content is dated after it (`stamp(after:)`).
     public var knownDeletion: (@MainActor (String) -> Date?)?
+    /// Content hashes copied as concealed in this session, with the date of the capture. In memory only, never saved,
+    /// and kept after the concealed item expires: a plain copy another Mac lists is deleted from that date once this
+    /// Mac sees it (`SyncService.sync`), however late its file arrives. Recording that at the capture instead would
+    /// publish the hash of a secret no other Mac had.
+    public private(set) var concealedCaptures: [String: Date] = [:]
     /// Called after every save; the app uses it to publish to other Macs shortly after a local change.
     public var onPersist: (@MainActor () -> Void)?
 
@@ -119,8 +124,17 @@ public final class HistoryStore {
         if !item.isConcealed {
             item.tagID = previous?.tagID
             item.tagChangedAt = previous?.tagChangedAt
-        } else if let previous, !previous.isConcealed {
-            deletions = [.item(hash, at: stamp(after: SyncItem(previous).lastChange))]
+        } else {
+            let plainPrevious = previous.flatMap { previous in
+                previous.isConcealed
+                    ? nil
+                    : SyncItem(previous).lastChange
+            }
+            let capturedAt = stamp(after: [plainPrevious, knownDeletion?(hash)].compactMap { $0 }.max())
+            concealedCaptures[hash] = capturedAt
+            if plainPrevious != nil {
+                deletions = [.item(hash, at: capturedAt)]
+            }
         }
         items.removeAll { $0.contentHash == hash }
         items.insert(item, at: 0)
