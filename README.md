@@ -63,7 +63,8 @@ copied, deleted or tagged on one shows up on the other once iCloud Drive uploads
 seconds to a couple of minutes). Anything copied from 1Password never leaves the Mac. A deletion reaches both Macs; to
 undo it, "Restore from iCloud…" brings the backup back on both. When it is first turned on
 on a Mac, its history is joined with the others' without duplicating anything. Tags with the same name
-are merged into one, even if you created them that way on purpose. The app is installed on each Mac by building it there.
+are merged into one, even if you created them that way on purpose, and so are two tags when one is renamed to the
+other's name. The app is installed on each Mac by building it there.
 
 It used to be called Clipboard: on the first launch of SimpleClipboard,
 `~/Library/Application Support/Clipboard/` and the `Clipboard` folder in iCloud Drive are moved

@@ -144,6 +144,10 @@ public final class SyncService {
             local = SyncMerge.adoptingRemoteTags(local, remotes: remote.states, now: now())
         }
         var result = SyncMerge.merge(local: local, remotes: remote.states, concealedHashes: store.concealedHashes, now: now())
+        // Published like a deletion, so a file that still lists the fused tag cannot bring it back (`SyncMerge`).
+        if !result.fusions.isEmpty {
+            record(result.fusions)
+        }
         result.items = result.items.filter { Self.hasAcceptableContent($0) && ensureLocalImage($0) }
         store.applySync(result)
         do {

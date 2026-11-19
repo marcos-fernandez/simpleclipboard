@@ -3,7 +3,9 @@ import Foundation
 /// What one Mac publishes as iCloud Drive/SimpleClipboard/Sync/devices/<deviceID>.json. Only that Mac writes it.
 public struct SyncState: Codable, Equatable, Sendable {
     /// A file with a higher version comes from a newer app on another Mac and is not read.
-    public static let currentVersion = 1
+    /// 2: tag deletions may carry `SyncDeletion.fusedInto`. An app of version 1 would read such a deletion as a plain
+    /// one and send the fused tag's items back to the history, untagging them on every Mac.
+    public static let currentVersion = 2
     /// Stands for "never changed" in data saved before sync existed (2001-01-01). Never `createdAt`: it changes on
     /// every re-copy and would make an old "no tag" look newer than a real tag change.
     public static let unstamped = Date(timeIntervalSinceReferenceDate: 0)

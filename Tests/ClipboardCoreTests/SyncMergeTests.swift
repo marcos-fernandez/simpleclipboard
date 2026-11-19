@@ -184,6 +184,60 @@ struct SyncMergeTests {
         #expect(result.items.first { $0.text == "deleted" }?.tagID == nil)
     }
 
+    // Fusing is recorded so that it outlives the name match: a rename into an existing name is never published
+    // otherwise (the renamed tag vanishes in the same merge), and renaming the winner later would split them again.
+    @Test func aFusionIsRecordedNoEarlierThanTheFusedTag() {
+        let result = merge(
+            state("A", tags: [tag(smaller, "Work"), tag(larger, "Work", changedAgo: -60)])
+        )
+        #expect(result.fusions == [.tag(larger, fusedInto: smaller, at: at(-60))])
+        var again = state("A", tags: result.tags, deletions: result.fusions)
+        again.items = result.items
+        #expect(merge(again).fusions.isEmpty)
+    }
+
+    // A Mac that has not merged since still lists the fused tag under its old name. The recorded fusion must take it
+    // and its items to the winner, whatever the winner is called now, instead of bringing it back.
+    @Test func aRecordedFusionBeatsAFileThatStillListsTheFusedTag() {
+        let stale = state(
+            "A", items: [item("hello", createdAgo: 100, tag: larger, taggedAgo: 100)],
+            tags: [tag(smaller, "Work", changedAgo: 1000), tag(larger, "Home", changedAgo: 1000)]
+        )
+        let fused = state(
+            "B", items: [item("hello", createdAgo: 100, tag: smaller, taggedAgo: 100)],
+            tags: [tag(smaller, "Office", changedAgo: 5)], deletions: [.tag(larger, fusedInto: smaller, at: at(50))]
+        )
+        let fromA = merge(stale, fused)
+        #expect(fromA.tags.map(\.name) == ["Office"])
+        #expect(fromA.items.map(\.tagID) == [smaller])
+        #expect(merge(fused, stale) == fromA)
+    }
+
+    // Unlike a plain deletion, a fused tag's items follow the winner, also into the history when the winner is
+    // deleted: a plain tombstone would make them orphans on the Macs that still have the fused tag.
+    @Test func itemsOfAFusedTagFollowTheWinnerEvenWhenItIsDeleted() {
+        let stale = state(
+            "A", items: [item("hello", createdAgo: 100, tag: larger, taggedAgo: 100)],
+            tags: [tag(larger, "Work", changedAgo: 1000)]
+        )
+        let fused = state("B", tags: [tag(smaller, "Work")], deletions: [.tag(larger, fusedInto: smaller, at: at(50))])
+        #expect(merge(stale, fused).items.map(\.tagID) == [smaller])
+        let deleted = state("C", deletions: [.tag(smaller, at: at(10))])
+        let result = merge(stale, fused, deleted)
+        #expect(result.tags.isEmpty)
+        #expect(result.items.map(\.tagID) == [nil])
+        #expect(result.items.map(\.createdAt) == [at(10)])
+    }
+
+    // A later change on a Mac that never saw the fusion is a real change, as with a deletion: it brings the tag back.
+    @Test func aChangeAfterTheFusionBringsTheTagBack() {
+        let result = merge(
+            state("A", tags: [tag(larger, "Home", changedAgo: 5)]),
+            state("B", tags: [tag(smaller, "Work")], deletions: [.tag(larger, fusedInto: smaller, at: at(50))])
+        )
+        #expect(Set(result.tags.map(\.name)) == ["Home", "Work"])
+    }
+
     @Test func newestTagChangeWinsAndALaterDeletionRemovesTheTag() {
         let renamed = merge(
             state("A", tags: [tag(work, "Work", changedAgo: 100)]),

@@ -433,7 +433,7 @@ struct SyncServiceTests {
         a.store.add(.text("one"), source: safari, concealed: false)
         a.round()
         try Data("not json".utf8).write(to: syncFolder.appendingPathComponent("devices/X.json"))
-        try Data(#"{"version": 2}"#.utf8).write(to: syncFolder.appendingPathComponent("devices/Y.json"))
+        try Data(#"{"version": \#(SyncState.currentVersion + 1)}"#.utf8).write(to: syncFolder.appendingPathComponent("devices/Y.json"))
         #expect(a.round() == .newerVersionElsewhere)
         #expect(a.store.items.map(\.text) == ["one"])
     }
@@ -546,6 +546,82 @@ struct SyncServiceTests {
         #expect(b.store.items.count == 2)
         #expect(a.store.items.allSatisfy { $0.tagID == winner })
         #expect(b.store.items.allSatisfy { $0.tagID == winner })
+    }
+
+    // Renaming a tag to the name of another fuses the two. The renamed tag vanishes in the same round, so its new
+    // name is never published, and the other Mac's file still lists it under its old name: without a record of the
+    // fusion it came back, and the item with it. Which tag survives depends on the ids, so both orders are run.
+    @Test(arguments: [true, false])
+    func renamingATagToAnExistingNameKeepsOneTagOnBothMacs(renamingTheLargerID: Bool) throws {
+        let a = try makeMac("A")
+        let b = try makeMac("B")
+        let first = try #require(a.store.createTag(name: "Work", colorIndex: 0))
+        let second = try #require(a.store.createTag(name: "Home", colorIndex: 1))
+        let (kept, renamed) = (first.id.uuidString < second.id.uuidString) == renamingTheLargerID
+            ? (first, second)
+            : (second, first)
+        let x = try #require(a.store.add(.text("x"), source: safari, concealed: false))
+        clock.advance(1)
+        a.store.setTag(itemID: x.id, tagID: renamed.id)
+        a.round()
+        b.round()
+        a.round()
+
+        clock.advance(60)
+        b.store.renameTag(id: renamed.id, name: kept.name)
+        for _ in 0..<3 {
+            clock.advance(30)
+            b.round()
+            a.round()
+        }
+
+        let survivor = min(kept.id.uuidString, renamed.id.uuidString)
+        for mac in [a, b] {
+            #expect(mac.store.tags.map(\.name) == [kept.name])
+            #expect(mac.store.tags.map(\.id.uuidString) == [survivor])
+            #expect(mac.store.items.map(\.tagID?.uuidString) == [survivor])
+        }
+        // Settled: further rounds publish nothing new, so the two Macs do not keep rewriting their files.
+        let devices = syncFolder.appendingPathComponent("devices", isDirectory: true)
+        let published = try fileManager.contentsOfDirectory(atPath: devices.path).sorted()
+            .map { try Data(contentsOf: devices.appendingPathComponent($0)) }
+        clock.advance(30)
+        b.round()
+        a.round()
+        #expect(try fileManager.contentsOfDirectory(atPath: devices.path).sorted()
+            .map { try Data(contentsOf: devices.appendingPathComponent($0)) } == published)
+    }
+
+    // After two tags fused, a file that still lists the fused one (a Mac that has not synced since) must not split
+    // them again when the surviving tag is renamed later.
+    @Test func renamingTheSurvivorOfAFusionDoesNotBringTheOtherTagBack() throws {
+        let a = try makeMac("A")
+        let b = try makeMac("B")
+        let c = try makeMac("C")
+        _ = try #require(a.store.createTag(name: "Work", colorIndex: 0))
+        let home = try #require(a.store.createTag(name: "Home", colorIndex: 1))
+        let x = try #require(a.store.add(.text("x"), source: safari, concealed: false))
+        a.store.setTag(itemID: x.id, tagID: home.id)
+        for mac in [a, b, c, a] {
+            mac.round()
+        }
+        clock.advance(60)
+        b.store.renameTag(id: home.id, name: "Work")
+        b.round()
+        a.round()
+        b.round()
+        let survivor = try #require(b.store.tags.first)
+        // C stays away; its file still lists Home.
+        clock.advance(60)
+        a.store.renameTag(id: survivor.id, name: "Office")
+        for _ in 0..<2 {
+            a.round()
+            b.round()
+        }
+        for mac in [a, b] {
+            #expect(mac.store.tags.map(\.name) == ["Office"])
+            #expect(mac.store.items.map(\.tagID) == [survivor.id])
+        }
     }
 
     @Test func deletionsSurviveARelaunch() throws {
