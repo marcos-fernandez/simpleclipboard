@@ -56,7 +56,8 @@ public final class FilePersistence: HistoryPersistence {
     }
 
     public func saveTags(_ tags: [Tag]) {
-        guard tags != savedTags else {
+        // A file gone meanwhile is written again: missing, it would load as "no tags" at the next launch.
+        guard tags != savedTags || !fileManager.fileExists(atPath: tagsURL.path) else {
             return
         }
         if saveArray(tags, to: tagsURL) {

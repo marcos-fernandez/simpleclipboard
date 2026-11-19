@@ -276,6 +276,19 @@ struct FilePersistenceTests {
         #expect(FilePersistence(directory: directory).loadTags().map(\.name) == ["Work", "Home"])
     }
 
+    @Test func unchangedTagsAreWrittenAgainWhenTheFileIsGone() throws {
+        // A missing tags.json loads as "no tags" at the next launch, and every item would lose its tag.
+        let tagsURL = directory.appendingPathComponent("tags.json")
+        let persistence = FilePersistence(directory: directory)
+        let tags = [Tag(name: "Work", colorIndex: 0)]
+        persistence.saveTags(tags)
+        try FileManager.default.removeItem(at: tagsURL)
+
+        persistence.saveTags(tags)
+
+        #expect(FilePersistence(directory: directory).loadTags() == tags)
+    }
+
     @Test func tagsReadFromDiskAreWrittenAgainEvenIfTheyMatchTheLastSave() throws {
         // A restore replaces tags.json behind the persistence's back and then loads it: the next save must write
         // what the store holds, not trust what was written before the restore.
