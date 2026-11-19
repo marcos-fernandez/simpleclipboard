@@ -41,7 +41,9 @@ Code Signing).
 `~/Library/Application Support/SimpleClipboard/` (`history.json`, `tags.json` and `images/`).
 The last 1000 untagged items or 30 days. Tagged items are kept unless you delete them
 (`⌘⌫`) or copy the same value from 1Password (it then becomes an in-memory-only
-copy). "Clear History…" deletes only untagged items.
+copy). "Clear History…" deletes only untagged items. Each save also writes a copy of
+`history.json` and `tags.json` as `.prev`: if a file is found damaged at launch, it is moved to `.bak` and the
+`.prev` copy is loaded instead.
 
 Backup: `~/Library/Mobile Documents/com~apple~CloudDocs/SimpleClipboard/Backup/`,
 automatic every hour when something changed, or from the menu ("Back Up Now",

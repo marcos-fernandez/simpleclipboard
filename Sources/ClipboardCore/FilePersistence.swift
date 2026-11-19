@@ -62,8 +62,9 @@ public final class FilePersistence: HistoryPersistence {
     }
 
     /// A missing file means nothing is stored yet. A file that exists but cannot be read or decoded is moved aside
-    /// (`movingCorruptTo` or a unique sibling, never over an earlier one) so the app starts empty instead of failing,
-    /// and the next save does not overwrite the user's data.
+    /// (`movingCorruptTo` or a unique sibling, never over an earlier one) so the app starts instead of failing and
+    /// the next save does not overwrite the user's data. The copy of the last save is loaded in its place
+    /// (`keepCopy`), or nothing when there is no such copy.
     private func loadArray<Element: Decodable>(from url: URL, movingCorruptTo backup: URL) -> [Element] {
         guard fileManager.fileExists(atPath: url.path) else {
             unsafeToSave.remove(url)
@@ -78,8 +79,47 @@ public final class FilePersistence: HistoryPersistence {
             let nsError = error as NSError
             Self.logger.error("\(url.lastPathComponent, privacy: .public) is unreadable (\(nsError.domain, privacy: .public) \(nsError.code, privacy: .public)), moving it aside")
             moveAside(url, preferring: backup)
+            return recoverCopy(of: url)
+        }
+    }
+
+    /// The copy is also put back in the file's place: the store may not save before the app quits, and a missing
+    /// file would then be read as "nothing stored" on the next launch.
+    private func recoverCopy<Element: Decodable>(of url: URL) -> [Element] {
+        let previous = previousURL(of: url)
+        guard let data = try? Data(contentsOf: previous),
+              let elements = try? JSONDecoder().decode([Element].self, from: data) else {
             return []
         }
+        Self.logger.notice("Recovered \(url.lastPathComponent, privacy: .public) from \(previous.lastPathComponent, privacy: .public)")
+        if !unsafeToSave.contains(url) {
+            do {
+                try fileManager.copyItem(at: previous, to: url)
+            } catch {
+                Self.logger.error("Cannot put \(previous.lastPathComponent, privacy: .public) back: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        return elements
+    }
+
+    /// Every save leaves a second copy of the file as `<name>.prev`, so a file found damaged later is recovered
+    /// instead of starting empty. Copied after the write, not before: a copy of the earlier contents would keep on
+    /// disk what the save has just removed (a deleted item, a value turned concealed), and recovering it would bring
+    /// that back.
+    private func keepCopy(of url: URL) {
+        let previous = previousURL(of: url)
+        do {
+            if fileManager.fileExists(atPath: previous.path) {
+                try fileManager.removeItem(at: previous)
+            }
+            try fileManager.copyItem(at: url, to: previous)
+        } catch {
+            Self.logger.error("Cannot keep a copy of \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func previousURL(of url: URL) -> URL {
+        url.appendingPathExtension("prev")
     }
 
     /// If the file cannot be moved, saving to its path is refused until a later load succeeds: an empty history
@@ -120,6 +160,7 @@ public final class FilePersistence: HistoryPersistence {
         do {
             let data = try JSONEncoder().encode(elements)
             try data.write(to: url, options: .atomic)
+            keepCopy(of: url)
         } catch {
             Self.logger.error("Cannot save \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }

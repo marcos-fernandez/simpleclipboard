@@ -339,6 +339,8 @@ struct SyncServiceTests {
         a.round()
         b.round()
         try Data("{".utf8).write(to: a.directory.appendingPathComponent("tags.json"))
+        // Without the copy of the last save there is nothing to recover the tags from.
+        try FileManager.default.removeItem(at: a.directory.appendingPathComponent("tags.json.prev"))
         clock.advance(60)
         let relaunched = HistoryStore(persistence: FilePersistence(directory: a.directory), now: { [clock] in clock.current })
         relaunched.deletionRecorder = { [sync = a.sync] in sync.record($0) }

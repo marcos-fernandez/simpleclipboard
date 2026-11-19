@@ -143,6 +143,69 @@ struct FilePersistenceTests {
         #expect(FilePersistence(directory: directory).load().map(\.text) == ["new"])
     }
 
+    @Test func damagedHistoryIsRecoveredFromTheCopyOfTheLastSave() throws {
+        // Starting empty after a damaged file loses everything the user had copied.
+        let historyURL = directory.appendingPathComponent("history.json")
+        let persistence = FilePersistence(directory: directory)
+        persistence.save([makeItem("one")])
+        persistence.save([makeItem("one"), makeItem("two")])
+        try Data("not json".utf8).write(to: historyURL)
+
+        let loaded = FilePersistence(directory: directory).load()
+
+        #expect(loaded.map(\.text) == ["one", "two"])
+        let backup = try Data(contentsOf: directory.appendingPathComponent("history.json.bak"))
+        #expect(String(decoding: backup, as: UTF8.self) == "not json")
+    }
+
+    @Test func recoveredHistoryIsStillThereOnTheNextLaunchWithoutASave() throws {
+        // The app may quit before anything is copied: the recovery must not depend on a later save.
+        let historyURL = directory.appendingPathComponent("history.json")
+        let persistence = FilePersistence(directory: directory)
+        persistence.save([makeItem("one")])
+        persistence.save([makeItem("one"), makeItem("two")])
+        try Data("not json".utf8).write(to: historyURL)
+        _ = FilePersistence(directory: directory).load()
+
+        #expect(FilePersistence(directory: directory).load().map(\.text) == ["one", "two"])
+    }
+
+    @MainActor @Test func imagesOfADamagedHistorySurviveTheNextCopy() throws {
+        // The store deletes every image no item points to on each save: starting empty after a
+        // damaged file would wipe the images of the whole history at the first copy.
+        let source = SourceApp(bundleID: "com.apple.Safari", name: "Safari")
+        let png = Data([1, 2, 3])
+        HistoryStore(persistence: FilePersistence(directory: directory)).add(.image(png), source: source, concealed: false)
+        try Data("not json".utf8).write(to: directory.appendingPathComponent("history.json"))
+
+        let relaunched = HistoryStore(persistence: FilePersistence(directory: directory))
+        relaunched.add(.text("new"), source: source, concealed: false)
+
+        let image = try #require(relaunched.items.first { $0.kind == .image })
+        #expect(relaunched.imageData(for: image) == png)
+    }
+
+    @Test func aRemovedItemDoesNotStayInTheCopy() throws {
+        // A deleted item, or a value that became concealed, must be gone from disk at once, and
+        // must not come back when the copy is recovered.
+        let persistence = FilePersistence(directory: directory)
+        persistence.save([makeItem("secret"), makeItem("kept")])
+        persistence.save([makeItem("kept")])
+        try Data("not json".utf8).write(to: directory.appendingPathComponent("history.json"))
+
+        #expect(FilePersistence(directory: directory).load().map(\.text) == ["kept"])
+    }
+
+    @Test func damagedTagsAreRecoveredFromTheCopyOfTheLastSave() throws {
+        // Without their tags the recovered items would fall back to the history and expire.
+        let persistence = FilePersistence(directory: directory)
+        let tags = [Tag(name: "Work", colorIndex: 0), Tag(name: "Home", colorIndex: 7)]
+        persistence.saveTags(tags)
+        try Data("not json".utf8).write(to: directory.appendingPathComponent("tags.json"))
+
+        #expect(FilePersistence(directory: directory).loadTags() == tags)
+    }
+
     @Test func imagesAreWrittenReadAndPrunedByName() throws {
         let persistence = FilePersistence(directory: directory)
         try persistence.writeImage(Data([1, 2, 3]), named: "keep.png")
