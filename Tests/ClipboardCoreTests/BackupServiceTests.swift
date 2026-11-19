@@ -263,6 +263,24 @@ struct BackupServiceTests {
         #expect(read(backupDirectory.appendingPathComponent("history.json")) == historyJSON("v1"))
     }
 
+    @Test(arguments: ["history.json", "tags.json"])
+    func localFilesThatDoNotDecodeAreNotBackedUp(damaged: String) throws {
+        // A damaged file left in place (it could not be moved aside) would replace the good backup with one that
+        // can never be restored.
+        try writeLocalData(history: "v1")
+        let service = makeService()
+        try service.backUp()
+        try write("not json", to: local.appendingPathComponent(damaged))
+
+        #expect(throws: BackupError.unreadableLocalData) {
+            try service.backUp()
+        }
+
+        #expect(read(backupDirectory.appendingPathComponent("history.json")) == historyJSON("v1"))
+        #expect(read(backupDirectory.appendingPathComponent("tags.json")) == tagsJSON("tags"))
+        #expect(!FileManager.default.fileExists(atPath: iCloud.appendingPathComponent("\(Config.appName)/Backup.tmp").path))
+    }
+
     @Test func restoreWithoutBackupOrWithAnIncompleteOneFails() throws {
         let service = makeService()
         #expect(!service.hasBackup)

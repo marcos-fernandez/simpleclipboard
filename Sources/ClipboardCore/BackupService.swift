@@ -10,6 +10,8 @@ public enum BackupError: Error, Equatable {
     case nothingToBackUp
     /// Backup/history.json or tags.json cannot be decoded.
     case corruptBackup
+    /// Local history.json or tags.json cannot be decoded: backing them up would replace a good backup.
+    case unreadableLocalData
 }
 
 /// Copies the on-disk data (history.json, tags.json, images/) to and from an iCloud Drive
@@ -71,6 +73,11 @@ public final class BackupService {
                 try? fileManager.removeItem(at: staging)
                 throw error
             }
+        }
+        // A damaged file left in place would replace a good backup with one restore() refuses.
+        guard isDecodable(staging) else {
+            try? fileManager.removeItem(at: staging)
+            throw BackupError.unreadableLocalData
         }
         let hadBackup = fileManager.fileExists(atPath: backupDirectory.path)
         do {
