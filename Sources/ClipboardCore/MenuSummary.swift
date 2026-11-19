@@ -1,40 +1,41 @@
 import Foundation
 
-/// What the settings window says about the backup in iCloud Drive.
+/// What the menu-bar menu says about the backup.
 public enum BackupSummary: Equatable, Sendable {
     case iCloudUnavailable
     /// A backup exists that this Mac has neither made nor restored: the user has to choose.
     case awaitingChoice
     /// Local data was found damaged and not recovered: the automatic backup is paused.
     case localDataLost
+    /// This Mac has never made or restored a backup.
     case noBackup
     case lastBackup(Date)
 
-    /// `relative`: a date as "5 min ago", from the app's formatter.
+    /// `relative`: a date as "5 minutes ago", from the app's formatter.
     public func text(relative: (Date) -> String) -> String {
         switch self {
         case .iCloudUnavailable:
             return "iCloud Drive not available"
         case .awaitingChoice:
-            return "iCloud backup not restored: restore it or make a new backup"
+            return "Backup not restored"
         case .localDataLost:
-            return "Local data was damaged: restore the backup or make a new one"
+            return "Local data was damaged"
         case .noBackup:
-            return "No backup in iCloud"
+            return "No backups yet"
         case .lastBackup(let date):
-            return "Last backup: \(relative(date))"
+            return "Last backup \(relative(date))"
         }
     }
 }
 
-/// The lines and switches of the settings window that depend on the state of the backup and of sync. Pure, so the
-/// rules are tested without the window.
-public enum SettingsSummary {
+/// The lines and items of the menu-bar menu that depend on the state of the backup and of sync. Pure, so the rules
+/// are tested without the menu.
+public enum MenuSummary {
     /// `isAwaitingUser`: the first-launch decision is waiting for the user (`BackupBootstrapDecision.awaitUser`).
     /// `block`: why the automatic backup does not run (`BackupBootstrap.automaticBackupBlock`).
     /// What stops the automatic backup comes first: the date of the last backup alone would read as "all is well".
     public static func backup(
-        isAvailable: Bool, hasBackup: Bool, isAwaitingUser: Bool, block: AutomaticBackupBlock?, lastBackupDate: Date?
+        isAvailable: Bool, isAwaitingUser: Bool, block: AutomaticBackupBlock?, lastBackupDate: Date?
     ) -> BackupSummary {
         guard isAvailable else {
             return .iCloudUnavailable
@@ -45,11 +46,12 @@ public enum SettingsSummary {
         if block == .localDataLost {
             return .localDataLost
         }
-        guard hasBackup else {
-            return .noBackup
-        }
-        // A backup with no date of this Mac's is not this Mac's, whatever `block` says.
-        return lastBackupDate.map(BackupSummary.lastBackup) ?? .awaitingChoice
+        return lastBackupDate.map(BackupSummary.lastBackup) ?? .noBackup
+    }
+
+    /// `isAvailable`: iCloud Drive is there.
+    public static func canRestore(isAvailable: Bool, hasBackup: Bool) -> Bool {
+        isAvailable && hasBackup
     }
 
     /// Empty when there is nothing to say (sync off and possible). `isAvailable`: iCloud Drive is there.

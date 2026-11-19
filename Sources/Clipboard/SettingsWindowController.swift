@@ -5,7 +5,10 @@ import SwiftUI
 /// The app has no main menu, so ⌘W and Esc never close the window on their own.
 final class SettingsWindow: NSWindow {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // Caps Lock is a device-independent flag too; drop it so "only ⌘" compares cleanly.
+        let modifiers = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting(.capsLock)
         if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "w" {
             performClose(nil)
             return true
@@ -24,7 +27,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let onBecomeKey: @MainActor () -> Void
 
     /// `onBecomeKey`: called whenever the window opens or comes back to the front, to refresh what it shows.
-    init(state: SettingsState, actions: SettingsActions, onBecomeKey: @escaping @MainActor () -> Void) {
+    init(
+        state: SettingsState, setOpensAtLogin: @escaping @MainActor (Bool) -> Void,
+        onBecomeKey: @escaping @MainActor () -> Void
+    ) {
         self.onBecomeKey = onBecomeKey
         window = SettingsWindow(
             contentRect: .zero,
@@ -38,14 +44,19 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.title = "\(Config.appName) Settings"
         // Kept for the next time it is opened.
         window.isReleasedWhenClosed = false
-        window.contentViewController = NSHostingController(rootView: SettingsView(state: state, actions: actions))
+        window.contentViewController = NSHostingController(
+            rootView: SettingsView(state: state, setOpensAtLogin: setOpensAtLogin)
+        )
     }
 
-    var isVisible: Bool {
-        window.isVisible
+    /// True while the user is in the window: false when it is closed or behind another app.
+    var isKey: Bool {
+        window.isKeyWindow
     }
 
     func show() {
+        // Before the window is drawn: it would open with the values of the last time and then change.
+        onBecomeKey()
         if !window.isVisible {
             window.center()
         }
@@ -53,7 +64,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
+    func close() {
+        window.close()
+    }
+
     func windowDidBecomeKey(_ notification: Notification) {
         onBecomeKey()
+    }
+
+    /// With no window left the app would stay active and unseen: the next ⇧⌘V has to see the user's app in front.
+    func windowWillClose(_ notification: Notification) {
+        NSApp.hide(nil)
     }
 }

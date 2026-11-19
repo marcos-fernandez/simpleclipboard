@@ -180,10 +180,9 @@ final class PanelController: NSObject, NSWindowDelegate {
         let frontApp = NSWorkspace.shared.frontmostApplication
         if frontApp?.processIdentifier != NSRunningApplication.current.processIdentifier {
             previousApp = frontApp
-        } else if NSApp.modalWindow != nil {
-            // Over one of our alerts there is no app to paste into: the one recorded on an earlier show would
-            // receive the paste unseen. Without an alert we may just still be active after one was closed, and
-            // the app recorded before is the one the user is looking at.
+        } else {
+            // While we are the frontmost app (an alert, the settings window) there is no app to paste into: the one
+            // recorded on an earlier show would receive the paste unseen. The item is only copied.
             previousApp = nil
         }
         state.query = ""
