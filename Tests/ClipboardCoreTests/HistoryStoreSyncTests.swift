@@ -99,17 +99,21 @@ struct HistoryStoreSyncTests {
 
     // MARK: deletions
 
-    // The store hands every deletion to whatever recorder is connected; whether to keep it (sync on, or off after
-    // joining) is `SyncService.record`'s decision. Without one nothing is handed over and nothing breaks.
-    @Test func deletionsAreHandedOverToTheConnectedRecorder() throws {
+    // The store hands every deletion to the connected recorder; whether to keep it (sync on, or off after joining) is
+    // `SyncService.record`'s decision. One made before a recorder is connected (the launch prune runs before the app
+    // can connect SyncService, and drops what expired while it was not running) is handed over when it is, or it
+    // would be lost.
+    @Test func deletionsMadeBeforeARecorderIsConnectedAreHandedOverWhenItIs() throws {
         let store = makeStore()
         let first = try #require(store.add(.text("one"), source: safari, concealed: false))
+        clock.advance(5)
         store.remove(id: first.id)
         let recorder = recording(store)
+        #expect(recorder.calls == [[.item(first.contentHash, at: clock.current)]])
         let second = try #require(store.add(.text("two"), source: safari, concealed: false))
         clock.advance(5)
         store.remove(id: second.id)
-        #expect(recorder.deletions == [.item(second.contentHash, at: clock.current)])
+        #expect(recorder.calls.last == [.item(second.contentHash, at: clock.current)])
     }
 
     @Test func clearingTheHistoryDeletesOnlyUntaggedItems() throws {
@@ -299,6 +303,32 @@ struct HistoryStoreSyncTests {
             contentHash: "remote-\(text)", kind: .text, text: text, imageFileName: nil, createdAt: date,
             sourceAppBundleID: nil, sourceAppName: nil, tagID: nil, tagChangedAt: SyncState.unstamped
         )
+    }
+
+    // MARK: expiry
+
+    // The count cap is an expiry too. An untagged item pushed out by newer copies could come back tagged from another
+    // Mac's older version (tagged items never expire), undoing the untag: its expiry is handed over, dated just after
+    // its tag change so only versions no newer than this Mac's lose. Items never tagged hand over nothing: an
+    // untagged older copy elsewhere is cut by the same limits, and sync.json is not filled with every expiry.
+    @Test func anItemPushedOutByTheCapIsHandedOverDatedAfterItsTagChange() throws {
+        let store = makeStore()
+        let tag = try #require(store.createTag(name: "Work", colorIndex: 0))
+        let x = try #require(store.add(.text("x"), source: safari, concealed: false))
+        store.setTag(itemID: x.id, tagID: tag.id)
+        clock.advance(1)
+        store.setTag(itemID: x.id, tagID: nil)
+        let untaggedAt = clock.current
+        let recorder = recording(store)
+        for index in 0..<Config.maxItems {
+            clock.advance(1)
+            store.add(.text("item \(index)"), source: safari, concealed: false)
+        }
+        #expect(!store.items.contains { $0.contentHash == x.contentHash })
+        #expect(recorder.deletions.map(\.key) == [x.contentHash])
+        let deletedAt = try #require(recorder.deletions.first?.deletedAt)
+        #expect(deletedAt > untaggedAt)
+        #expect(deletedAt < untaggedAt.addingTimeInterval(1))
     }
 
     // MARK: clocks that disagree

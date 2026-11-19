@@ -10,11 +10,15 @@ public enum SyncMerge {
         public var tags: [SyncTag]
         /// Tags this merge fused into a namesake (`fusingSameNames`), for this Mac to publish with its deletions.
         public var fusions: [SyncDeletion]
+        /// Merged items the limits dropped, for a Mac that still holds one to record its expiry
+        /// (`HistoryStore.applySync`).
+        public var expired: [SyncItem]
 
-        public init(items: [SyncItem], tags: [SyncTag], fusions: [SyncDeletion] = []) {
+        public init(items: [SyncItem], tags: [SyncTag], fusions: [SyncDeletion] = [], expired: [SyncItem] = []) {
             self.items = items
             self.tags = tags
             self.fusions = fusions
+            self.expired = expired
         }
     }
 
@@ -41,7 +45,8 @@ public enum SyncMerge {
         let fusions = kept.tags.compactMap { tag in
             fused.remap[tag.id].map { SyncDeletion.tag(tag.id, fusedInto: $0, at: max(now, tag.changedAt)) }
         }
-        return Result(items: withinLimits(items, now: now), tags: fused.tags, fusions: fusions)
+        let limited = withinLimits(items, now: now)
+        return Result(items: limited.kept, tags: fused.tags, fusions: fusions, expired: limited.dropped)
     }
 
     /// First sync on a Mac: a local tag named like a remote one (trimmed, case-insensitive) is replaced by the
@@ -253,7 +258,7 @@ public enum SyncMerge {
     }
 
     /// Same limits as `HistoryStore.prune()`, applied here so images of dropped items are never copied.
-    private static func withinLimits(_ items: [SyncItem], now: Date) -> [SyncItem] {
+    private static func withinLimits(_ items: [SyncItem], now: Date) -> (kept: [SyncItem], dropped: [SyncItem]) {
         let newestFirst = items.sorted { lhs, rhs in
             if lhs.createdAt != rhs.createdAt {
                 return lhs.createdAt > rhs.createdAt
@@ -261,16 +266,20 @@ public enum SyncMerge {
             return lhs.contentHash < rhs.contentHash
         }
         var untaggedKept = 0
-        return newestFirst.filter { item in
+        var limited: (kept: [SyncItem], dropped: [SyncItem]) = ([], [])
+        for item in newestFirst {
             guard item.tagID == nil else {
-                return true
+                limited.kept.append(item)
+                continue
             }
             guard now.timeIntervalSince(item.createdAt) <= Config.maxAge, untaggedKept < Config.maxItems else {
-                return false
+                limited.dropped.append(item)
+                continue
             }
             untaggedKept += 1
-            return true
+            limited.kept.append(item)
         }
+        return limited
     }
 
     private static func nameKey(_ name: String) -> String {

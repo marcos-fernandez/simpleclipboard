@@ -22,8 +22,15 @@ public final class HistoryStore {
     public private(set) var tags: [Tag] = []
     /// Connected to `SyncService.record`, which decides what to keep: the deletions other Macs must apply. One call
     /// per store operation with all its deletions, and none when there are none: `SyncService` saves its file once
-    /// per call, so a call per item would rewrite it once per item on the main thread.
-    public var deletionRecorder: (@MainActor ([SyncDeletion]) -> Void)?
+    /// per call, so a call per item would rewrite it once per item on the main thread. Deletions made before one is
+    /// connected (what expired while the app was not running, dropped by `init`) are handed over when it is.
+    public var deletionRecorder: (@MainActor ([SyncDeletion]) -> Void)? {
+        didSet {
+            let pending = pendingDeletions
+            pendingDeletions = []
+            recordDeletions(pending)
+        }
+    }
     /// The latest deletion of a content hash this Mac knows of, its own or another Mac's
     /// (`SyncService.latestDeletion(ofItem:)`): a new copy of that content is dated after it (`stamp(after:)`).
     public var knownDeletion: (@MainActor (String) -> Date?)?
@@ -32,6 +39,8 @@ public final class HistoryStore {
 
     private let persistence: HistoryPersistence
     private let now: () -> Date
+    /// Deletions made while no `deletionRecorder` is connected.
+    private var pendingDeletions: [SyncDeletion] = []
 
     public init(persistence: HistoryPersistence, now: @escaping () -> Date = Date.init) {
         self.persistence = persistence
@@ -106,15 +115,16 @@ public final class HistoryStore {
         // A re-copy keeps the tag, and when it was set, so other Macs do not take it for a newer tag change.
         // A concealed re-copy drops it (concealed items are never tagged); for a saved value it is also a deletion
         // other Macs must apply, so the value does not stay there as plain text.
+        var deletions: [SyncDeletion] = []
         if !item.isConcealed {
             item.tagID = previous?.tagID
             item.tagChangedAt = previous?.tagChangedAt
         } else if let previous, !previous.isConcealed {
-            recordDeletions([.item(hash, at: stamp(after: SyncItem(previous).lastChange))])
+            deletions = [.item(hash, at: stamp(after: SyncItem(previous).lastChange))]
         }
         items.removeAll { $0.contentHash == hash }
         items.insert(item, at: 0)
-        prune()
+        prune(handingOver: deletions)
         persist()
         return item
     }
@@ -212,12 +222,10 @@ public final class HistoryStore {
 
     /// Its items go back to the history as if just copied; none is deleted.
     public func deleteTag(id: UUID) {
-        if let tag = tags.first(where: { $0.id == id }) {
-            recordDeletions([.tag(id, at: stamp(after: tag.changedAt))])
-        }
+        let deletions = tags.first { $0.id == id }.map { [SyncDeletion.tag(id, at: stamp(after: $0.changedAt))] } ?? []
         tags.removeAll { $0.id == id }
         untag { $0.tagID == id }
-        prune()
+        prune(handingOver: deletions)
         persist()
     }
 
@@ -227,8 +235,9 @@ public final class HistoryStore {
     ///   an older deletion on another Mac, even when sync is turned on only later; what is gone counts as deleted.
     ///   `createdAt` is kept, so the order does not change.
     /// - `markingChanges: false`, the first-launch restore that fills an empty new Mac. Items and tags keep the stamps
-    ///   the backup carries and nothing is recorded as deleted, so the normal merge rules decide against the other
-    ///   Macs: stamping it as changed now would undo, once sync is on, everything they did since that backup.
+    ///   the backup carries and nothing is recorded as deleted (but what expires, as always: `expiryDeletion`), so
+    ///   the normal merge rules decide against the other Macs: stamping it as changed now would undo, once sync is
+    ///   on, everything they did since that backup.
     /// There is no default: forgetting the choice would silently pick one of the two.
     public func reloadFromDisk(markingChanges: Bool) {
         let previousItems = Dictionary(
@@ -237,6 +246,7 @@ public final class HistoryStore {
         let previousTags = Dictionary(tags.map { ($0.id, $0.changedAt) }, uniquingKeysWith: { first, _ in first })
         items = persistence.load()
         tags = persistence.loadTags()
+        var deletions: [SyncDeletion] = []
         if markingChanges {
             // Each stamp is later than the restored version, the one it replaces and a known deletion (`stamp(after:)`).
             for index in items.indices {
@@ -254,10 +264,10 @@ public final class HistoryStore {
                 .map { SyncDeletion.item($0.key, at: stamp(after: $0.value)) }
             let goneTags = previousTags.filter { !restoredTagIDs.contains($0.key) }
                 .map { SyncDeletion.tag($0.key, at: stamp(after: $0.value)) }
-            recordDeletions(goneItems + goneTags)
+            deletions = goneItems + goneTags
         }
         untagOrphans()
-        prune()
+        prune(handingOver: deletions)
         persist()
     }
 
@@ -296,6 +306,13 @@ public final class HistoryStore {
         guard newItems != items || newTags != tags else {
             return false
         }
+        // What leaves this Mac by the limits (the merge's, or the local ones just applied) is an expiry like `prune()`'s.
+        let keptHashes = Set(newItems.map(\.contentHash))
+        let heldHashes = Set(items.filter { !$0.isConcealed }.map(\.contentHash))
+        let expired = (result.expired + result.items).filter { item in
+            heldHashes.contains(item.contentHash) && !keptHashes.contains(item.contentHash)
+        }
+        recordDeletions(expired.compactMap(expiryDeletion))
         items = newItems
         tags = newTags
         persist()
@@ -370,7 +387,31 @@ public final class HistoryStore {
         guard !deletions.isEmpty else {
             return
         }
-        deletionRecorder?(deletions)
+        guard let deletionRecorder else {
+            pendingDeletions += deletions
+            return
+        }
+        deletionRecorder(deletions)
+    }
+
+    /// The deletion other Macs must apply for an item this Mac let expire (`Config.maxAge`, `Config.maxItems`), if
+    /// any. Without it, an older tagged version on a Mac that stopped publishing comes back (tagged items never
+    /// expire) and undoes the untag that let the item expire. Dated just after its tag change, never at the expiry:
+    /// only versions no newer than this Mac's lose, so a re-tag made elsewhere later, even on a Mac that was offline,
+    /// still wins. None for an item never tagged (an older untagged copy elsewhere is cut by the same limits), so the
+    /// deletions do not list every expiry, nor for one already covered by a known deletion or past the retention.
+    private func expiryDeletion(of item: SyncItem) -> SyncDeletion? {
+        guard item.tagChangedAt != SyncState.unstamped else {
+            return nil
+        }
+        let deletedAt = item.tagChangedAt.addingTimeInterval(Self.stampStep)
+        guard now().timeIntervalSince(deletedAt) <= Config.syncRetention else {
+            return nil
+        }
+        if let known = knownDeletion?(item.contentHash), known >= deletedAt {
+            return nil
+        }
+        return .item(item.contentHash, at: deletedAt)
     }
 
     /// Clears the tag of every matching item; they become "just copied" and move to the front. A user action stamps
@@ -425,13 +466,18 @@ public final class HistoryStore {
 
     /// Drops expired concealed items, untagged items older than `maxAge` and the untagged overflow
     /// beyond `maxItems`. Tagged items are exempt from both age and cap.
+    /// Hands over `deletions` (those of the calling operation) with the expiries (`expiryDeletion`) in one call.
     /// Returns whether anything was removed.
     @discardableResult
-    private func prune() -> Bool {
+    private func prune(handingOver deletions: [SyncDeletion] = []) -> Bool {
         let kept = Self.pruned(items, now: now())
         guard kept != items else {
+            recordDeletions(deletions)
             return false
         }
+        let keptIDs = Set(kept.map(\.id))
+        let expired = items.filter { !$0.isConcealed && !keptIDs.contains($0.id) }
+        recordDeletions(deletions + expired.compactMap { expiryDeletion(of: SyncItem($0)) })
         items = kept
         return true
     }

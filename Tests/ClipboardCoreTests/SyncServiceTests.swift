@@ -726,6 +726,92 @@ struct SyncServiceTests {
         try expectSettled([a, b])
     }
 
+    // MARK: expiry
+
+    enum ExpiryPath: CaseIterable {
+        /// The purge timer drops the item before the next round.
+        case purge
+        /// A round runs first: the merge drops it by the same limits.
+        case round
+        /// The app was not running: the store drops it at launch, before sync is connected.
+        case relaunch
+    }
+
+    /// x tagged Work on A and B; B then stops publishing (asleep, or sync off: its file stays live for the retention).
+    func macsSharingATaggedItem() throws -> (a: Mac, b: Mac, work: ClipboardCore.Tag, x: ClipItem) {
+        let a = try makeMac("A")
+        let b = try makeMac("B")
+        let work = try #require(a.store.createTag(name: "Work", colorIndex: 0))
+        let x = try #require(a.store.add(.text("x"), source: safari, concealed: false))
+        clock.advance(1)
+        a.store.setTag(itemID: x.id, tagID: work.id)
+        a.round()
+        b.round()
+        a.round()
+        return (a, b, work, x)
+    }
+
+    /// Moves past the 30 days of an item untagged by now, lets it expire on A by the path given and runs A's rounds.
+    func expire(on a: Mac, by path: ExpiryPath) throws -> Mac {
+        clock.advance(Config.maxAge + 24 * 60 * 60)
+        var mac = a
+        switch path {
+        case .purge:
+            a.store.purgeExpired()
+        case .round:
+            break
+        case .relaunch:
+            let store = HistoryStore(persistence: FilePersistence(directory: a.directory), now: { [clock] in clock.current })
+            store.deletionRecorder = { [sync = a.sync] in sync.record($0) }
+            store.knownDeletion = { [sync = a.sync] in sync.latestDeletion(ofItem: $0) }
+            mac = Mac(directory: a.directory, store: store, sync: a.sync)
+        }
+        mac.round()
+        mac.round()
+        return mac
+    }
+
+    // An untag on A, then the item expires there (no deletion by itself). The only version left was B's frozen
+    // tagged one, and tagged items never expire: x came back on A tagged, and the untag was lost for good.
+    @Test(arguments: ExpiryPath.allCases)
+    func anUntagIsNotUndoneWhenTheItemExpires(path: ExpiryPath) throws {
+        let (a, b, _, x) = try macsSharingATaggedItem()
+        clock.advance(24 * 60 * 60)
+        a.store.setTag(itemID: x.id, tagID: nil)
+        a.round()
+        let aLater = try expire(on: a, by: path)
+        #expect(aLater.store.items.isEmpty)
+        // B comes back: its old tagged copy goes, it does not return to A.
+        b.round()
+        aLater.round()
+        #expect(b.store.items.isEmpty)
+        #expect(aLater.store.items.isEmpty)
+        try expectSettled([aLater, b])
+    }
+
+    // What A's expiry removes must be only what A had already seen: B re-tagged x on day 20 while offline, after A's
+    // untag, and that later choice must win when B comes back, even though A let x expire meanwhile. A deletion dated
+    // at the expiry would have removed it.
+    @Test(arguments: ExpiryPath.allCases)
+    func aLaterReTagOnAnotherMacSurvivesTheExpiry(path: ExpiryPath) throws {
+        let (a, b, work, x) = try macsSharingATaggedItem()
+        clock.advance(24 * 60 * 60)
+        a.store.setTag(itemID: x.id, tagID: nil)
+        a.round()
+        clock.advance(19 * 24 * 60 * 60)
+        let onB = try #require(b.store.items.first)
+        b.store.setTag(itemID: onB.id, tagID: work.id)
+        let aLater = try expire(on: a, by: path)
+        b.round()
+        aLater.round()
+        b.round()
+        for mac in [aLater, b] {
+            #expect(mac.store.items.map(\.text) == ["x"])
+            #expect(mac.store.items.map(\.tagID) == [work.id])
+        }
+        try expectSettled([aLater, b])
+    }
+
     // Turning sync off for a while is not leaving: the Mac's file still lists everything it had. A deletion made
     // meanwhile (often of something sensitive) must reach the other Macs once sync is back on, or the other Mac's
     // file brings the item back here and it is never removed there.
