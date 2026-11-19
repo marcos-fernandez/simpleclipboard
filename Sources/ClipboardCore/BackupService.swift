@@ -115,6 +115,12 @@ public final class BackupService {
             try? fileManager.removeItem(at: staging)
             throw BackupError.corruptBackup
         }
+        do {
+            try checkImages(staging)
+        } catch {
+            try? fileManager.removeItem(at: staging)
+            throw error
+        }
         var movedAside: [String] = []
         var movedIn: [String] = []
         do {
@@ -245,6 +251,31 @@ public final class BackupService {
         }
         return (try? decoder.decode([ClipItem].self, from: history)) != nil
             && (try? decoder.decode([Tag].self, from: tags)) != nil
+    }
+
+    /// The local images folder is replaced by the staged one, and every save deletes from it what the history does
+    /// not name: a link there would point that at another folder, and a missing image would be lost for good.
+    /// So images/ must be a real folder holding only files (all backUp() ever copies), with every image the
+    /// history lists (`incompleteBackup`: iCloud may not have listed it yet).
+    private func checkImages(_ staging: URL) throws {
+        let images = staging.appendingPathComponent(Self.imagesName, isDirectory: true)
+        guard fileType(images) == .typeDirectory else {
+            throw BackupError.corruptBackup
+        }
+        let names = try fileManager.contentsOfDirectory(atPath: images.path)
+        guard names.allSatisfy({ fileType(images.appendingPathComponent($0)) == .typeRegular }) else {
+            throw BackupError.corruptBackup
+        }
+        let history = try Data(contentsOf: staging.appendingPathComponent("history.json"))
+        let listed = try JSONDecoder().decode([ClipItem].self, from: history).compactMap(\.imageFileName)
+        guard Set(listed).isSubset(of: names) else {
+            throw BackupError.incompleteBackup
+        }
+    }
+
+    /// Not following a symbolic link.
+    private func fileType(_ url: URL) -> FileAttributeType? {
+        (try? fileManager.attributesOfItem(atPath: url.path))?[.type] as? FileAttributeType
     }
 
     /// A crash between the two renames of backUp() leaves only Backup.old/: put it back.

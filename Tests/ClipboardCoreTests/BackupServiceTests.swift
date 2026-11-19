@@ -162,6 +162,57 @@ struct BackupServiceTests {
         #expect(read(local.appendingPathComponent("tags.json")) == tagsJSON("tags"))
     }
 
+    @Test func backupMissingAnImageItsHistoryListsIsRefusedAndLocalDataIsUntouched() throws {
+        // The restore replaces the local images folder: an image item restored without its file is lost for good,
+        // and iCloud may simply not have listed that file yet.
+        try writeLocalData(history: "local")
+        let imageItem = #"[{"id":"00000000-0000-0000-0000-000000000001","createdAt":0,"kind":"image","imageFileName":"b.png","contentHash":"b","isConcealed":false}]"#
+        try write(imageItem, to: backupDirectory.appendingPathComponent("history.json"))
+        try write(tagsJSON("tags"), to: backupDirectory.appendingPathComponent("tags.json"))
+        try FileManager.default.createDirectory(at: backupDirectory.appendingPathComponent("images"), withIntermediateDirectories: true)
+
+        #expect(throws: BackupError.incompleteBackup) {
+            try makeService().restore()
+        }
+
+        #expect(read(local.appendingPathComponent("history.json")) == historyJSON("local"))
+        #expect(read(local.appendingPathComponent("images/a.png")) == "png")
+    }
+
+    @Test func backupWhoseImagesFolderIsALinkIsRefused() throws {
+        // A link restored as the local images folder points somewhere else: the next save would delete there
+        // everything the history does not name.
+        try writeLocalData(history: "local")
+        let elsewhere = root.appendingPathComponent("Projects", isDirectory: true)
+        try write("code", to: elsewhere.appendingPathComponent("main.swift"))
+        try write(historyJSON("v1"), to: backupDirectory.appendingPathComponent("history.json"))
+        try write(tagsJSON("tags"), to: backupDirectory.appendingPathComponent("tags.json"))
+        try FileManager.default.createSymbolicLink(
+            at: backupDirectory.appendingPathComponent("images"), withDestinationURL: elsewhere
+        )
+
+        #expect(throws: BackupError.corruptBackup) {
+            try makeService().restore()
+        }
+
+        #expect(read(local.appendingPathComponent("history.json")) == historyJSON("local"))
+        #expect(read(elsewhere.appendingPathComponent("main.swift")) == "code")
+    }
+
+    @Test func backupWithAnythingButFilesInItsImagesFolderIsRefused() throws {
+        // backUp() only ever copies image files: a folder or a link in there was not made by the app.
+        try writeLocalData(history: "local")
+        try write(historyJSON("v1"), to: backupDirectory.appendingPathComponent("history.json"))
+        try write(tagsJSON("tags"), to: backupDirectory.appendingPathComponent("tags.json"))
+        try write("x", to: backupDirectory.appendingPathComponent("images/folder/x.png"))
+
+        #expect(throws: BackupError.corruptBackup) {
+            try makeService().restore()
+        }
+
+        #expect(read(local.appendingPathComponent("history.json")) == historyJSON("local"))
+    }
+
     @Test func failureHalfWayThroughKeepsThePreviousBackup() throws {
         try writeLocalData(history: "v1")
         let service = makeService()
