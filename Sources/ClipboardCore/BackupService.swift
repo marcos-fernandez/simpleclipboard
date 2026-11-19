@@ -5,7 +5,7 @@ public enum BackupError: Error, Equatable {
     case iCloudUnavailable
     case noBackup
     /// Backup/history.json or tags.json missing, any of its files not downloaded from iCloud yet, or an image its
-    /// history lists missing from Backup/images.
+    /// history lists missing from Backup/images (not downloaded yet, or already missing when it was backed up).
     case incompleteBackup
     /// No local history.json yet (fresh install).
     case nothingToBackUp
@@ -82,6 +82,7 @@ public final class BackupService {
             try? fileManager.removeItem(at: staging)
             throw BackupError.unreadableLocalData
         }
+        logMissingImages(staging)
         let hadBackup = fileManager.fileExists(atPath: backupDirectory.path)
         do {
             if hadBackup {
@@ -276,7 +277,8 @@ public final class BackupService {
     /// The local images folder is replaced by the staged one, and every save deletes from it what the history does
     /// not name: a link there would point that at another folder, and a missing image would be lost for good.
     /// So images/ must be a real folder holding only files (all backUp() ever copies), with every image the
-    /// history lists (`incompleteBackup`: iCloud may not have listed it yet).
+    /// history lists (`incompleteBackup`: iCloud may not have listed it yet, or the backup was made from a history
+    /// whose image file was already missing, which `logMissingImages` reports).
     private func checkImages(_ staging: URL) throws {
         guard hasOnlyImageFiles(staging) else {
             throw BackupError.corruptBackup
@@ -288,6 +290,21 @@ public final class BackupService {
         let listed = try JSONDecoder().decode([ClipItem].self, from: history).compactMap(\.imageFileName)
         guard Set(listed).isSubset(of: names) else {
             throw BackupError.incompleteBackup
+        }
+    }
+
+    /// A history that lists an image missing from images/ is still backed up (refusing would leave no newer backup
+    /// at all), but `restore()` will refuse that backup as incomplete: logged so the cause can be found.
+    private func logMissingImages(_ staging: URL) {
+        let images = staging.appendingPathComponent(Self.imagesName, isDirectory: true)
+        guard let names = try? fileManager.contentsOfDirectory(atPath: images.path),
+              let history = try? Data(contentsOf: staging.appendingPathComponent("history.json")),
+              let items = try? JSONDecoder().decode([ClipItem].self, from: history) else {
+            return
+        }
+        let missing = Set(items.compactMap(\.imageFileName)).subtracting(names)
+        if !missing.isEmpty {
+            Self.logger.error("Backing up a history that lists \(missing.count, privacy: .public) missing images; this backup cannot be restored")
         }
     }
 

@@ -471,7 +471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .noBackup:
             return "There is no backup in iCloud."
         case .incompleteBackup:
-            return "The iCloud backup is incomplete or has not been downloaded yet. Open it in Finder and try again."
+            return "The iCloud backup is incomplete: some files have not been downloaded yet, or were already missing when it was made. Open it in Finder and try again; if it still fails, make a new backup."
         case .nothingToBackUp:
             return "There is nothing to back up yet."
         case .corruptBackup:
