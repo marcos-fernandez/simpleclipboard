@@ -73,4 +73,29 @@ struct PasteboardClassifierTests {
         )
         #expect(result == .concealed)
     }
+
+    @Test func copyRightAfterKeychainAccessLostFocusIsIgnored() {
+        // Same polling race: a password copied in Keychain Access and ⌘Tab within 0.5 s must not reach disk.
+        let result = PasteboardClassifier.classify(
+            types: plainText,
+            sourceBundleID: "com.apple.Safari",
+            recentSourceBundleIDs: ["com.apple.keychainaccess"]
+        )
+        #expect(result == .ignore)
+    }
+
+    @Test func recentlyDeactivatedIgnoredAppWinsOverConcealed() {
+        // Ignored means not stored at all, not even in memory for 10 minutes.
+        let concealedTypes = plainText.union([Config.concealedType])
+        #expect(PasteboardClassifier.classify(
+            types: concealedTypes,
+            sourceBundleID: "com.apple.Safari",
+            recentSourceBundleIDs: ["com.apple.keychainaccess"]
+        ) == .ignore)
+        #expect(PasteboardClassifier.classify(
+            types: plainText,
+            sourceBundleID: "com.apple.Safari",
+            recentSourceBundleIDs: ["com.1password.1password", "com.apple.keychainaccess"]
+        ) == .ignore)
+    }
 }

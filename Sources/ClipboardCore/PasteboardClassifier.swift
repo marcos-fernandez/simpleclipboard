@@ -24,6 +24,10 @@ public enum PasteboardClassifier {
         if let sourceBundleID, Config.ignoredSourceBundleIDs.contains(sourceBundleID) {
             return .ignore
         }
+        // Same polling race as the concealed apps below: focus may already have left Keychain Access.
+        if !recentSourceBundleIDs.isDisjoint(with: Config.ignoredSourceBundleIDs) {
+            return .ignore
+        }
         if types.contains(Config.concealedType) {
             return .concealed
         }
