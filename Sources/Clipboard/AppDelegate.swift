@@ -120,8 +120,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else {
                 return
             }
-            Paster.paste(item, imageData: store.imageData(for: item), into: target)
-            store.promote(id: item.id)
+            // Nothing pasted (its image file is missing) is not a use: the item keeps its place and nothing is saved.
+            if Paster.paste(item, imageData: store.imageData(for: item), into: target) {
+                store.promote(id: item.id)
+            }
         }
 
         hotkey = HotkeyManager { [weak self] in
