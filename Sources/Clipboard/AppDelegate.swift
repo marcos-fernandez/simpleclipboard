@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let logger = Logger(subsystem: Config.bundleID, category: "AppDelegate")
 
     private var store: HistoryStore!
+    /// Writes the store's saves in the background: flushed before anything reads the files from disk.
+    private var persistence: BackgroundPersistence!
     private var monitor: ClipboardMonitor!
     private var panel: PanelController!
     private var hotkey: HotkeyManager!
@@ -86,9 +88,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             Self.logger.error("Cannot recover an interrupted restore: \(error.localizedDescription, privacy: .public)")
         }
-        let persistence = FilePersistence(directory: directory)
+        let files = FilePersistence(directory: directory)
+        persistence = BackgroundPersistence(wrapping: files)
         store = HistoryStore(persistence: persistence)
-        if persistence.dataWasLost {
+        if files.dataWasLost {
             UserDefaults.standard.set(true, forKey: Self.localDataLostKey)
         }
         restoreOnFirstLaunchIfNeeded()
@@ -146,6 +149,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // The last changes may still be on their way to disk.
+        persistence.flush()
         Paster.clearConcealedValue()
     }
 
@@ -330,6 +335,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch decision {
         case .restore:
             do {
+                // A write still on its way would land on top of the restored files.
+                persistence.flush()
                 try backup.restore()
                 // Only fills an empty new Mac: the merge rules decide against the other Macs once sync is on.
                 store.reloadFromDisk(markingChanges: false)
@@ -378,8 +385,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         restoreOnFirstLaunchIfNeeded()
         guard isBackupBootstrapDone,
               backup.isAvailable,
-              automaticBackupBlock == nil,
-              backup.hasChanges(since: lastBackupDate) else {
+              automaticBackupBlock == nil else {
+            return
+        }
+        // The dates compared are those of the files on disk, so the latest change must be written first.
+        persistence.flush()
+        guard backup.hasChanges(since: lastBackupDate) else {
             return
         }
         performBackup(manual: false)
@@ -388,6 +399,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @discardableResult
     private func performBackup(manual: Bool) -> Bool {
         do {
+            // The backup copies the files on disk: the latest change must be written first.
+            persistence.flush()
             try backup.backUp()
             UserDefaults.standard.set(Date(), forKey: Self.lastBackupKey)
             // Only the user's choice lifts it: an automatic backup that ran because iCloud had not listed the
@@ -439,6 +452,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate()
         if alert.runModal() == .alertFirstButtonReturn {
             do {
+                // After the alert: timers keep saving while it is open. A write still on its way would land on top
+                // of the restored files.
+                persistence.flush()
                 try backup.restore()
                 // A restore the user asked for wins, even with sync off: turning sync on later must not let an older
                 // deletion from another Mac remove what was just restored.

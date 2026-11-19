@@ -33,8 +33,8 @@ public enum Config {
     public static let syncPollInterval: TimeInterval = 30
     /// Publish this long after the last local change, not on every keystroke-like burst of saves.
     public static let syncPublishDelay: TimeInterval = 2
-    /// Larger copies are not recorded: every change rewrites the whole history on the main thread and republishes it
-    /// to iCloud, so one huge item would make every later copy slow.
+    /// Larger copies are not recorded: every change rewrites the whole history and republishes it to iCloud, so one
+    /// huge item would make every later copy slow.
     public static let maxTextBytes = 2 * 1024 * 1024
     public static let maxImageBytes = 20 * 1024 * 1024
 

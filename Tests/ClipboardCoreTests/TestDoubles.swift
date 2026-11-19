@@ -41,6 +41,40 @@ final class InMemoryPersistence: HistoryPersistence {
     }
 }
 
+/// Holds every save until the test lets it through, so a test can hand states over while an older one is being
+/// written. Semaphores, not sleeps: each step waits for the exact event it needs.
+final class GatedPersistence: HistoryPersistence, @unchecked Sendable {
+    let inner = InMemoryPersistence()
+    /// The texts of each history saved, in the order the saves were made.
+    private(set) var savedTexts: [[String?]] = []
+    private let entered = DispatchSemaphore(value: 0)
+    private let gate = DispatchSemaphore(value: 0)
+
+    /// Returns once a save has started and is waiting at the gate.
+    func waitUntilSaving() {
+        entered.wait()
+    }
+
+    /// Lets the save waiting at the gate go on.
+    func release() {
+        gate.signal()
+    }
+
+    func load() -> [ClipItem] { inner.load() }
+    func save(_ items: [ClipItem]) -> Bool {
+        entered.signal()
+        gate.wait()
+        savedTexts.append(items.map(\.text))
+        return inner.save(items)
+    }
+    var tagsWereLost: Bool { inner.tagsWereLost }
+    func loadTags() -> [Tag] { inner.loadTags() }
+    func saveTags(_ tags: [Tag]) { inner.saveTags(tags) }
+    func writeImage(_ data: Data, named name: String) throws { try inner.writeImage(data, named: name) }
+    func readImage(named name: String) -> Data? { inner.readImage(named: name) }
+    func deleteImages(notIn keep: Set<String>) { inner.deleteImages(notIn: keep) }
+}
+
 final class TestClock {
     var current = Date(timeIntervalSince1970: 1_000_000)
 

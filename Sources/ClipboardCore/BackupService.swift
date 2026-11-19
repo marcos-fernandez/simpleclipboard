@@ -18,7 +18,8 @@ public enum BackupError: Error, Equatable {
 
 /// Copies the on-disk data (history.json, tags.json, images/) to and from an iCloud Drive
 /// folder. Only on-disk data is copied, so concealed items never leave the Mac.
-/// Synchronous by design: call it on the main actor so the store cannot write mid-copy.
+/// Synchronous by design: call it on the main actor, after `BackgroundPersistence.flush()`, so the store cannot write
+/// mid-copy.
 public final class BackupService {
     private static let logger = Logger(subsystem: Config.bundleID, category: "BackupService")
 

@@ -39,6 +39,8 @@ Code Signing).
 ## Data
 
 `~/Library/Application Support/SimpleClipboard/` (`history.json`, `tags.json` and `images/`).
+Changes are written in the background right after they happen; quitting the app writes any still on their way, and a
+crash or power cut can only lose those (normally the last fraction of a second).
 The last 1000 untagged items or 30 days. Tagged items are kept unless you delete them
 (`⌘⌫`) or copy the same value from 1Password (it then becomes an in-memory-only
 copy). "Clear History…" deletes only untagged items. Each save also writes a copy of

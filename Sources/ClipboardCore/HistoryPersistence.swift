@@ -16,4 +16,18 @@ public protocol HistoryPersistence {
     func readImage(named name: String) -> Data?
     /// Removes every stored image whose name is not in `keep`.
     func deleteImages(notIn keep: Set<String>)
+    /// One save of the store: the history, the tags, then the images the history no longer lists. A single call, so
+    /// a persistence that writes later (`BackgroundPersistence`) keeps the three together.
+    func saveHistory(_ items: [ClipItem], tags: [Tag])
+}
+
+extension HistoryPersistence {
+    public func saveHistory(_ items: [ClipItem], tags: [Tag]) {
+        let saved = save(items)
+        saveTags(tags)
+        // A history that failed to save still lists the items of the last save, images included.
+        if saved {
+            deleteImages(notIn: Set(items.compactMap(\.imageFileName)))
+        }
+    }
 }
