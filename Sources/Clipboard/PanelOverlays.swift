@@ -53,28 +53,37 @@ struct TagPickerOverlay: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Tag")
                 .font(.headline)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(options.enumerated()), id: \.element) { index, option in
-                        row(option)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6).fill(
-                                    index == state.pickerIndex
-                                        ? Color.accentColor.opacity(0.3)
-                                        : Color.clear
-                                )
-                            )
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                state.apply(option, to: itemID, in: store)
-                            }
-                    }
+            // A ScrollView always takes the whole height: with few tags the card would be far taller than its rows
+            // and cover the search field. It is only used when the rows do not fit.
+            ViewThatFits(in: .vertical) {
+                rows(options)
+                ScrollView {
+                    rows(options)
                 }
             }
             .frame(maxHeight: 180)
+        }
+    }
+
+    private func rows(_ options: [TagPickerOption]) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(options.enumerated()), id: \.element) { index, option in
+                row(option)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6).fill(
+                            index == state.pickerIndex
+                                ? Color.accentColor.opacity(0.3)
+                                : Color.clear
+                        )
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        state.apply(option, to: itemID, in: store)
+                    }
+            }
         }
     }
 

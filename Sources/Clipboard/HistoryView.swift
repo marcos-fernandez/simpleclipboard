@@ -36,9 +36,8 @@ struct HistoryView: View {
             }
         }
         .onChange(of: state.overlay) { _, newValue in
-            if newValue == nil {
-                searchFocused = true
-            }
+            // AppKit draws the search field's focus ring above the overlay, so the field gives focus up meanwhile.
+            searchFocused = newValue == nil
         }
         .onChange(of: state.query) {
             state.selectedID = nil
