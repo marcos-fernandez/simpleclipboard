@@ -33,8 +33,9 @@ public final class HistoryStore {
         self.now = now
         items = persistence.load()
         tags = persistence.loadTags()
+        let recreatedTags = persistence.tagsWereLost && recreateLostTags()
         let untaggedOrphans = untagOrphans()
-        if prune() || untaggedOrphans {
+        if prune() || untaggedOrphans || recreatedTags {
             persist()
         }
     }
@@ -354,6 +355,21 @@ public final class HistoryStore {
         }
         items.removeAll(where: shouldUntag)
         items.insert(contentsOf: moved, at: 0)
+    }
+
+    /// After a tags file that could not be read nor recovered, a stand-in tag for each tag the items point to, so
+    /// they stay tagged (on disk too) until a repaired file or another Mac brings the real one back. Each name is
+    /// unique, so the merge never fuses two of them (`SyncMerge.fusingSameNames`), and the stamp is older than
+    /// `SyncState.unstamped`, so any real version of the tag, even one never stamped, wins over it.
+    private func recreateLostTags() -> Bool {
+        let known = Set(tags.map(\.id))
+        var lostIDs: [UUID] = []
+        for tagID in items.compactMap(\.tagID) where !known.contains(tagID) && !lostIDs.contains(tagID) {
+            lostIDs.append(tagID)
+        }
+        let stamp = SyncState.unstamped.addingTimeInterval(-1)
+        tags += lostIDs.map { Tag(id: $0, name: "Recovered \($0.uuidString.prefix(8))", colorIndex: 0, changedAt: stamp) }
+        return !lostIDs.isEmpty
     }
 
     /// Items whose tag no longer exists (e.g. after a corrupt tags file) are treated as just copied,

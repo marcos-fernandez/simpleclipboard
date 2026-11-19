@@ -241,6 +241,45 @@ struct FilePersistenceTests {
         #expect(FilePersistence(directory: directory).loadTags() == tags)
     }
 
+    @Test func tagsAreReportedLostOnlyWhenTheFileWasThereAndNothingCouldBeRecovered() throws {
+        // The store keeps the items' tags only for a real loss: no tags file is normal (a v1 install has none),
+        // and a recovered copy already brings the tags back.
+        let tagsURL = directory.appendingPathComponent("tags.json")
+        let missing = FilePersistence(directory: directory)
+        _ = missing.loadTags()
+        #expect(!missing.tagsWereLost)
+
+        missing.saveTags([Tag(name: "Work", colorIndex: 0)])
+        try Data("not json".utf8).write(to: tagsURL)
+        let recovered = FilePersistence(directory: directory)
+        _ = recovered.loadTags()
+        #expect(!recovered.tagsWereLost)
+
+        try Data("not json".utf8).write(to: tagsURL)
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("tags.json.prev"))
+        let lost = FilePersistence(directory: directory)
+        _ = lost.loadTags()
+        #expect(lost.tagsWereLost)
+    }
+
+    @MainActor @Test func itemsStayTaggedAcrossLaunchesAfterTheTagsFileIsLost() throws {
+        // The tags written in place of the lost ones keep the items' tags on disk, so the next launch does not
+        // read them as orphans and untag them after all.
+        let source = SourceApp(bundleID: "com.apple.Safari", name: "Safari")
+        let store = HistoryStore(persistence: FilePersistence(directory: directory))
+        let tag = try #require(store.createTag(name: "Work", colorIndex: 0))
+        let item = try #require(store.add(.text("one"), source: source, concealed: false))
+        store.setTag(itemID: item.id, tagID: tag.id)
+        try Data("not json".utf8).write(to: directory.appendingPathComponent("tags.json"))
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("tags.json.prev"))
+
+        _ = HistoryStore(persistence: FilePersistence(directory: directory))
+        let relaunched = HistoryStore(persistence: FilePersistence(directory: directory))
+
+        #expect(relaunched.items.map(\.tagID) == [tag.id])
+        #expect(relaunched.tags.map(\.id) == [tag.id])
+    }
+
     @Test func imagesAreWrittenReadAndPrunedByName() throws {
         let persistence = FilePersistence(directory: directory)
         try persistence.writeImage(Data([1, 2, 3]), named: "keep.png")

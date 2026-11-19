@@ -151,6 +151,53 @@ struct HistoryStoreTagTests {
         #expect(persistence.stored.first?.tagID == nil)
     }
 
+    func taggedItem(_ text: String, tagID: UUID) -> ClipItem {
+        ClipItem(
+            createdAt: clock.current, kind: .text, text: text, imageFileName: nil,
+            contentHash: "hash-\(text)", source: safari, isConcealed: false, expiresAt: nil, tagID: tagID
+        )
+    }
+
+    @Test func itemsKeepTheirTagsWhenTheTagsFileIsUnreadable() {
+        // A damaged tags file loses names and colours, not which items belong together. Untagging the items
+        // would save that loss over history.json too, so a repaired tags file or the other Macs (through sync)
+        // could no longer give the tags back, and the items would start to expire.
+        let work = UUID()
+        let home = UUID()
+        persistence.stored = [taggedItem("a", tagID: work), taggedItem("b", tagID: home), taggedItem("c", tagID: work)]
+        persistence.tagsWereLost = true
+        clock.advance(Config.maxAge * 2)
+
+        let store = makeStore()
+
+        #expect(store.items.map(\.tagID) == [work, home, work])
+        #expect(persistence.stored.map(\.tagID) == [work, home, work])
+        #expect(store.tags.map(\.id) == [work, home])
+        #expect(persistence.storedTags.map(\.id) == [work, home])
+    }
+
+    @Test func tagsRecreatedForAnUnreadableFileNeverWinOverTheRealOnes() throws {
+        // Each stands in for a tag that may still exist on another Mac. Two with the same name would be fused into
+        // one by the merge, and one that won over the real version, even a tag never stamped (saved before sync),
+        // would replace the user's name and colour on every Mac.
+        let work = UUID()
+        let home = UUID()
+        persistence.stored = [taggedItem("a", tagID: work), taggedItem("b", tagID: home)]
+        persistence.tagsWereLost = true
+        let store = makeStore()
+        let local = SyncState(
+            deviceID: "Z", publishedAt: clock.current, items: [], tags: store.syncSnapshot().tags, deletions: []
+        )
+        let real = SyncTag(id: work, name: "Work", colorIndex: 3, changedAt: SyncState.unstamped)
+        let remote = SyncState(deviceID: "A", publishedAt: clock.current, items: [], tags: [real], deletions: [])
+
+        let merged = SyncMerge.merge(local: local, remotes: [remote], concealedHashes: [], now: clock.current)
+
+        #expect(Set(store.tags.map(\.name)).count == 2)
+        #expect(merged.tags.map(\.id) == [work, home])
+        #expect(merged.tags.first == real)
+    }
+
     // MARK: dedup
 
     @Test func recopyingATaggedItemKeepsItsTagAndMovesItFirst() throws {

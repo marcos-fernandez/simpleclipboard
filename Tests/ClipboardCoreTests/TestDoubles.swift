@@ -7,6 +7,7 @@ final class InMemoryPersistence: HistoryPersistence {
     var images: [String: Data] = [:]
     var failImageWrites = false
     var failSaves = false
+    var tagsWereLost = false
     var saveCount = 0
 
     init(stored: [ClipItem] = [], storedTags: [Tag] = []) {

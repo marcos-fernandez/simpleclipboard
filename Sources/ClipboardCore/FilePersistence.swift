@@ -12,6 +12,8 @@ public final class FilePersistence: HistoryPersistence {
     private let fileManager = FileManager.default
     /// Files that exist but could not be read nor moved aside (see `moveAside`).
     private var unsafeToSave: Set<URL> = []
+    /// Files found unreadable at their last load with no usable copy of the last save (see `recoverCopy`).
+    private var unrecovered: Set<URL> = []
 
     public init(directory: URL) {
         historyURL = directory.appendingPathComponent("history.json")
@@ -37,6 +39,10 @@ public final class FilePersistence: HistoryPersistence {
 
     public func loadTags() -> [Tag] {
         loadArray(from: tagsURL, movingCorruptTo: tagsBackupURL)
+    }
+
+    public var tagsWereLost: Bool {
+        unrecovered.contains(tagsURL)
     }
 
     public func saveTags(_ tags: [Tag]) {
@@ -70,6 +76,7 @@ public final class FilePersistence: HistoryPersistence {
     private func loadArray<Element: Decodable>(from url: URL, movingCorruptTo backup: URL) -> [Element] {
         guard fileManager.fileExists(atPath: url.path) else {
             unsafeToSave.remove(url)
+            unrecovered.remove(url)
             return []
         }
         do {
@@ -85,6 +92,7 @@ public final class FilePersistence: HistoryPersistence {
             }
             let elements = try JSONDecoder().decode([Element].self, from: data)
             unsafeToSave.remove(url)
+            unrecovered.remove(url)
             return elements
         } catch {
             let nsError = error as NSError
@@ -100,8 +108,10 @@ public final class FilePersistence: HistoryPersistence {
         let previous = previousURL(of: url)
         guard let data = try? Data(contentsOf: previous),
               let elements = try? JSONDecoder().decode([Element].self, from: data) else {
+            unrecovered.insert(url)
             return []
         }
+        unrecovered.remove(url)
         Self.logger.notice("Recovered \(url.lastPathComponent, privacy: .public) from \(previous.lastPathComponent, privacy: .public)")
         if !unsafeToSave.contains(url) {
             do {
