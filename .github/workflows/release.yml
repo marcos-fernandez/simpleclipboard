@@ -1,0 +1,54 @@
+# Publishes SimpleClipboard.zip (Apple Silicon + Intel) as a GitHub release when a tag like v1.2.0 is pushed.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        run: scripts/test.sh
+
+      # The same self-signed certificate for every release: macOS ties the Accessibility permission to it, so an
+      # update signed with another one (or ad-hoc) would have to be granted the permission again.
+      - name: Import the signing certificate
+        env:
+          SIGNING_CERTIFICATE_P12: ${{ secrets.SIGNING_CERTIFICATE_P12 }}
+          SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="${RUNNER_TEMP}/signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          base64 --decode <<<"${SIGNING_CERTIFICATE_P12}" > "${RUNNER_TEMP}/signing.p12"
+          security create-keychain -p "${keychain_password}" "${keychain}"
+          security unlock-keychain -p "${keychain_password}" "${keychain}"
+          security import "${RUNNER_TEMP}/signing.p12" -k "${keychain}" -P "${SIGNING_CERTIFICATE_PASSWORD}" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "${keychain_password}" "${keychain}" >/dev/null
+          security list-keychains -d user -s "${keychain}" login.keychain-db
+          rm "${RUNNER_TEMP}/signing.p12"
+
+      - name: Build
+        env:
+          UNIVERSAL: "1"
+          SIGNING_IDENTITY: SimpleClipboard Release Signing
+        run: |
+          set -euo pipefail
+          APP_VERSION="${GITHUB_REF_NAME#v}" scripts/build-app.sh
+          # build-app.sh falls back to ad-hoc signing when the certificate is missing: a release must not.
+          codesign -d -r- build/SimpleClipboard.app 2>&1 | grep "certificate" >/dev/null
+          lipo -archs build/SimpleClipboard.app/Contents/MacOS/SimpleClipboard
+          ditto -c -k --keepParent build/SimpleClipboard.app SimpleClipboard.zip
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" SimpleClipboard.zip --generate-notes

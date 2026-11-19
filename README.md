@@ -10,6 +10,14 @@ memory only and disappears after 10 minutes.
 
 - macOS 14 or later, Command Line Tools (`xcode-select --install`). Xcode is not needed.
 
+## Install
+
+1. Download `SimpleClipboard.zip` from the [latest release](../../releases/latest) (one build for Apple Silicon and
+   Intel), unzip it and drag `SimpleClipboard.app` to Applications.
+2. Open it. The app is not notarized by Apple, so macOS refuses the first time: go to System Settings > Privacy &
+   Security and click "Open Anyway" (or run `xattr -dr com.apple.quarantine /Applications/SimpleClipboard.app`).
+3. Grant the Accessibility permission when asked (see Permissions).
+
 ## Build and install
 
 ```bash

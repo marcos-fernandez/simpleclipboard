@@ -2,19 +2,25 @@
 # Builds build/SimpleClipboard.app from the SwiftPM release binary and signs it.
 # Signs with the "Clipboard Local Signing" certificate when present so the
 # Accessibility permission survives rebuilds; falls back to ad-hoc signing.
+# Releases set UNIVERSAL=1 (one binary for Apple Silicon and Intel), APP_VERSION and SIGNING_IDENTITY.
 set -euo pipefail
 
 readonly APP_NAME="SimpleClipboard"
 # SwiftPM executable target (internal name, kept from before the rename).
 readonly PRODUCT_NAME="Clipboard"
-readonly SIGNING_IDENTITY="Clipboard Local Signing"
+readonly SIGNING_IDENTITY="${SIGNING_IDENTITY:-Clipboard Local Signing}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 readonly ROOT_DIR
 readonly APP_DIR="${ROOT_DIR}/build/${APP_NAME}.app"
 
 cd "${ROOT_DIR}"
-swift build -c release
-BIN_DIR="$(swift build -c release --show-bin-path)"
+BUILD_ARGS=(-c release)
+if [[ "${UNIVERSAL:-0}" == "1" ]]; then
+    BUILD_ARGS+=(--arch arm64 --arch x86_64)
+fi
+readonly BUILD_ARGS
+swift build "${BUILD_ARGS[@]}"
+BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
 readonly BIN_DIR
 
 rm -rf "${APP_DIR}"
@@ -22,6 +28,9 @@ mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
 cp "${BIN_DIR}/${PRODUCT_NAME}" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
 cp "${ROOT_DIR}/scripts/Info.plist" "${APP_DIR}/Contents/Info.plist"
 cp "${ROOT_DIR}/scripts/AppIcon.icns" "${APP_DIR}/Contents/Resources/AppIcon.icns"
+if [[ -n "${APP_VERSION:-}" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${APP_VERSION}" "${APP_DIR}/Contents/Info.plist"
+fi
 
 # No grep -q in a pipe: under pipefail, grep exiting on the first match while the writer is still writing fails the
 # pipeline. Not find-identity -v: the self-signed certificate is listed as CSSMERR_TP_NOT_TRUSTED, which -v leaves
