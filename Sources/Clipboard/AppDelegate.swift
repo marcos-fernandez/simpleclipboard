@@ -462,7 +462,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .corruptBackup:
             return "The iCloud backup is damaged and cannot be restored."
         case .unreadableLocalData:
-            return "This Mac's history or tags cannot be read, so they were not backed up."
+            return "This Mac's history, tags or images folder cannot be read, so they were not backed up."
         case nil:
             return error.localizedDescription
         }

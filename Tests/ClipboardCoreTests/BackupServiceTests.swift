@@ -281,6 +281,24 @@ struct BackupServiceTests {
         #expect(!FileManager.default.fileExists(atPath: iCloud.appendingPathComponent("\(Config.appName)/Backup.tmp").path))
     }
 
+    @Test func aLinkedLocalImagesFolderIsNotBackedUp() throws {
+        // restore() refuses a backup whose images folder is a link, so publishing one would replace a good backup
+        // with one that can never be restored.
+        try writeLocalData(history: "v1")
+        let service = makeService()
+        try service.backUp()
+        let elsewhere = root.appendingPathComponent("Projects", isDirectory: true)
+        try write("code", to: elsewhere.appendingPathComponent("main.swift"))
+        try FileManager.default.removeItem(at: local.appendingPathComponent("images"))
+        try FileManager.default.createSymbolicLink(at: local.appendingPathComponent("images"), withDestinationURL: elsewhere)
+
+        #expect(throws: BackupError.unreadableLocalData) {
+            try service.backUp()
+        }
+
+        #expect(read(backupDirectory.appendingPathComponent("images/a.png")) == "png")
+    }
+
     @Test func restoreWithoutBackupOrWithAnIncompleteOneFails() throws {
         let service = makeService()
         #expect(!service.hasBackup)

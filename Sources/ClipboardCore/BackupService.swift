@@ -4,13 +4,15 @@ import os
 public enum BackupError: Error, Equatable {
     case iCloudUnavailable
     case noBackup
-    /// Backup/history.json or tags.json missing, or any of its files not downloaded from iCloud yet.
+    /// Backup/history.json or tags.json missing, any of its files not downloaded from iCloud yet, or an image its
+    /// history lists missing from Backup/images.
     case incompleteBackup
     /// No local history.json yet (fresh install).
     case nothingToBackUp
-    /// Backup/history.json or tags.json cannot be decoded.
+    /// Backup/history.json or tags.json cannot be decoded, or Backup/images is not a folder of files.
     case corruptBackup
-    /// Local history.json or tags.json cannot be decoded: backing them up would replace a good backup.
+    /// Local history.json or tags.json cannot be decoded, or local images/ is not a folder of files: backing them
+    /// up would replace a good backup with one restore() refuses.
     case unreadableLocalData
 }
 
@@ -74,8 +76,9 @@ public final class BackupService {
                 throw error
             }
         }
-        // A damaged file left in place would replace a good backup with one restore() refuses.
-        guard isDecodable(staging) else {
+        // A damaged file left in place, or a linked images folder, would replace a good backup with one restore()
+        // refuses.
+        guard isDecodable(staging), hasOnlyImageFiles(staging) else {
             try? fileManager.removeItem(at: staging)
             throw BackupError.unreadableLocalData
         }
@@ -275,19 +278,27 @@ public final class BackupService {
     /// So images/ must be a real folder holding only files (all backUp() ever copies), with every image the
     /// history lists (`incompleteBackup`: iCloud may not have listed it yet).
     private func checkImages(_ staging: URL) throws {
-        let images = staging.appendingPathComponent(Self.imagesName, isDirectory: true)
-        guard fileType(images) == .typeDirectory else {
+        guard hasOnlyImageFiles(staging) else {
             throw BackupError.corruptBackup
         }
-        let names = try fileManager.contentsOfDirectory(atPath: images.path)
-        guard names.allSatisfy({ fileType(images.appendingPathComponent($0)) == .typeRegular }) else {
-            throw BackupError.corruptBackup
-        }
+        let names = try fileManager.contentsOfDirectory(
+            atPath: staging.appendingPathComponent(Self.imagesName, isDirectory: true).path
+        )
         let history = try Data(contentsOf: staging.appendingPathComponent("history.json"))
         let listed = try JSONDecoder().decode([ClipItem].self, from: history).compactMap(\.imageFileName)
         guard Set(listed).isSubset(of: names) else {
             throw BackupError.incompleteBackup
         }
+    }
+
+    /// images/ is a real folder (not a link) holding only files.
+    private func hasOnlyImageFiles(_ data: URL) -> Bool {
+        let images = data.appendingPathComponent(Self.imagesName, isDirectory: true)
+        guard fileType(images) == .typeDirectory,
+              let names = try? fileManager.contentsOfDirectory(atPath: images.path) else {
+            return false
+        }
+        return names.allSatisfy { fileType(images.appendingPathComponent($0)) == .typeRegular }
     }
 
     /// Not following a symbolic link.
