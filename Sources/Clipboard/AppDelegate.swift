@@ -288,7 +288,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Falls back to the plain icon: a symbol missing on this macOS would leave the menu-bar item invisible.
         statusItem.button?.image = availableUpdate == nil
             ? plainIcon
-            : NSImage(systemSymbolName: "arrow.up.doc.on.clipboard", accessibilityDescription: "\(Config.appName), update available")
+            // Coloured, so no longer a template image: the arrow alone is too small to notice in the menu bar.
+            : NSImage(systemSymbolName: "arrow.up.doc.on.clipboard", accessibilityDescription: "\(Config.appName), update available")?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.systemOrange]))
                 ?? plainIcon
     }
 
