@@ -13,6 +13,8 @@ struct ClipCardView: View {
         formatter.unitsStyle = .short
         return formatter
     }()
+    /// Text can be up to 2 MiB; 11 lines on a 220 pt card hold far fewer characters, so only this much is laid out.
+    private static let previewLength = 1000
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -79,7 +81,7 @@ struct ClipCardView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else {
-            Text(item.text ?? "")
+            Text(String((item.text ?? "").prefix(Self.previewLength)))
                 .font(.system(size: 12))
                 .lineLimit(11)
         }
