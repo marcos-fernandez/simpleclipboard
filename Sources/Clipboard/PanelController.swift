@@ -253,7 +253,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         // Exact match keeps ⌘ arrow combos with other modifiers out of tab switching (they fall through to the card-selection cases).
         let modifiers = event.modifierFlags
             .intersection(.deviceIndependentFlagsMask)
-            .subtracting([.numericPad, .function])
+            .subtracting([.numericPad, .function, .capsLock])
         if modifiers == .command {
             switch Int(event.keyCode) {
             case kVK_LeftArrow:
@@ -262,11 +262,13 @@ final class PanelController: NSObject, NSWindowDelegate {
             case kVK_RightArrow:
                 switchTab(by: 1)
                 return true
-            case kVK_ANSI_T:
-                openTagPicker()
-                return true
             default:
                 break
+            }
+            // By character, like the edit shortcuts: on Dvorak the key at kVK_ANSI_T does not type "t".
+            if event.charactersIgnoringModifiers?.lowercased() == "t" {
+                openTagPicker()
+                return true
             }
         }
         let results = state.results(in: store)
