@@ -3,7 +3,7 @@ import ClipboardCore
 import ImageIO
 
 /// Decoded thumbnails by content hash, so moving through the strip does not re-read PNGs from disk.
-/// Concealed images are never cached: they must disappear when they expire.
+/// Concealed images are never decoded: their cards show a lock, never the image.
 /// Display only: pasting reads the full-size data from the store, never this cache.
 @MainActor
 enum ThumbnailCache {
@@ -18,7 +18,7 @@ enum ThumbnailCache {
 
     static func image(for item: ClipItem, store: HistoryStore) -> NSImage? {
         guard !item.isConcealed else {
-            return store.imageData(for: item).flatMap(thumbnail(from:))
+            return nil
         }
         let key = item.contentHash as NSString
         if let cached = cache.object(forKey: key) {
