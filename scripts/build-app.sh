@@ -3,6 +3,7 @@
 # Signs with the "Clipboard Local Signing" certificate when present so the
 # Accessibility permission survives rebuilds; falls back to ad-hoc signing.
 # Releases set UNIVERSAL=1 (one binary for Apple Silicon and Intel), APP_VERSION and SIGNING_IDENTITY.
+# APP_VERSION defaults to the latest git tag without its leading v.
 set -euo pipefail
 
 readonly APP_NAME="SimpleClipboard"
@@ -14,6 +15,13 @@ readonly ROOT_DIR
 readonly APP_DIR="${ROOT_DIR}/build/${APP_NAME}.app"
 
 cd "${ROOT_DIR}"
+# A local build would otherwise say Info.plist's 1.0 and report every release as an update: it takes the latest tag's
+# version instead. Without a tag (or without git) Info.plist's is kept.
+if [[ -z "${APP_VERSION:-}" ]]; then
+    LATEST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+    APP_VERSION="${LATEST_TAG#v}"
+fi
+readonly APP_VERSION
 BUILD_ARGS=(-c release)
 if [[ "${UNIVERSAL:-0}" == "1" ]]; then
     BUILD_ARGS+=(--arch arm64 --arch x86_64)
