@@ -18,6 +18,8 @@ public enum Config {
     public static let tagColorCount = 8
     /// Automatic iCloud Drive backup, only when something changed.
     public static let backupInterval: TimeInterval = 60 * 60
+    /// Also once this long after launch, so a Mac that never runs the app for a whole `backupInterval` backs up too.
+    public static let backupLaunchDelay: TimeInterval = 60
     /// Sync: deletions, and Macs that stopped publishing, are forgotten after this.
     public static let syncRetention: TimeInterval = 90 * 24 * 60 * 60
     /// An image no Mac uses is only deleted from iCloud after this: it can arrive before the file of the Mac using it.

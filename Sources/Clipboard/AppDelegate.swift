@@ -103,6 +103,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         RunLoop.main.add(backupTimer, forMode: .common)
         self.backupTimer = backupTimer
+        let launchBackupTimer = Timer(timeInterval: Config.backupLaunchDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.backUpIfChanged()
+            }
+        }
+        RunLoop.main.add(launchBackupTimer, forMode: .common)
 
         monitor = ClipboardMonitor(store: store)
         monitor.start()
