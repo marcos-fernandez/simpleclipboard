@@ -92,6 +92,10 @@ final class PanelState {
             }
             store.setTag(itemID: itemID, tagID: tag.id)
         case .renameTag(let tagID):
+            guard store.tags.contains(where: { $0.id == tagID }) else {
+                overlay = nil
+                return
+            }
             guard store.renameTag(id: tagID, name: promptText) else {
                 return
             }
