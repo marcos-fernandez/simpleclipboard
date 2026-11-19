@@ -178,11 +178,14 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     func show() {
         let frontApp = NSWorkspace.shared.frontmostApplication
-        // When we are frontmost (e.g. one of our alerts), there is no app to paste into: an app recorded on an
-        // earlier show would receive the paste unseen.
-        previousApp = frontApp?.processIdentifier == NSRunningApplication.current.processIdentifier
-            ? nil
-            : frontApp
+        if frontApp?.processIdentifier != NSRunningApplication.current.processIdentifier {
+            previousApp = frontApp
+        } else if NSApp.modalWindow != nil {
+            // Over one of our alerts there is no app to paste into: the one recorded on an earlier show would
+            // receive the paste unseen. Without an alert we may just still be active after one was closed, and
+            // the app recorded before is the one the user is looking at.
+            previousApp = nil
+        }
         state.query = ""
         state.selectedID = nil
         state.scope = .history
@@ -276,8 +279,11 @@ final class PanelController: NSObject, NSWindowDelegate {
             default:
                 break
             }
-            // By character, like the edit shortcuts: on Dvorak the key at kVK_ANSI_T does not type "t".
-            if event.charactersIgnoringModifiers?.lowercased() == "t" {
+            // By character, like the edit shortcuts: on Dvorak the key at kVK_ANSI_T does not type "t". A layout
+            // with no Latin letters (Russian, Greek) types no "t" at all, so there the physical key still counts.
+            let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+            let isLatin = key.unicodeScalars.allSatisfy(\.isASCII)
+            if key == "t" || (!isLatin && Int(event.keyCode) == kVK_ANSI_T) {
                 openTagPicker()
                 return true
             }
