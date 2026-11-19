@@ -67,19 +67,18 @@ final class ClipboardMonitor {
         Self.logger.debug("Captured kind=\(item?.kind.rawValue ?? "none", privacy: .public) concealed=\(classification == .concealed)")
     }
 
-    /// Text wins over image: if there is text, kind = .text.
+    /// Text wins over image, unless the text is blank.
     private func readContent() -> ClipContent? {
-        if let text = pasteboard.string(forType: .string) {
-            return .text(text)
+        PasteboardContent.choose(text: pasteboard.string(forType: .string)) {
+            if let png = pasteboard.data(forType: .png) {
+                return png
+            }
+            if let tiff = pasteboard.data(forType: .tiff),
+               let bitmap = NSBitmapImageRep(data: tiff),
+               let png = bitmap.representation(using: .png, properties: [:]) {
+                return png
+            }
+            return nil
         }
-        if let png = pasteboard.data(forType: .png) {
-            return .image(png)
-        }
-        if let tiff = pasteboard.data(forType: .tiff),
-           let bitmap = NSBitmapImageRep(data: tiff),
-           let png = bitmap.representation(using: .png, properties: [:]) {
-            return .image(png)
-        }
-        return nil
     }
 }
