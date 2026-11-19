@@ -102,8 +102,7 @@ public final class BackupService {
         let parent = localDirectory.deletingLastPathComponent()
         let staging = parent
             .appendingPathComponent("\(localDirectory.lastPathComponent).restore.tmp", isDirectory: true)
-        let old = parent
-            .appendingPathComponent("\(localDirectory.lastPathComponent).restore.old", isDirectory: true)
+        let old = leftoverRestoreDirectory
         try preserveLeftoverRestoreFolder(old)
         guard isComplete(backupDirectory) else {
             throw BackupError.incompleteBackup
@@ -153,6 +152,17 @@ public final class BackupService {
         }
         try? fileManager.removeItem(at: old)
         try? fileManager.removeItem(at: staging)
+    }
+
+    /// Call at launch before the store loads: a restore interrupted by a crash leaves the local data in a
+    /// `.restore.old` folder (see `restore()`), and the store would start empty and delete the images.
+    public func recoverInterruptedRestore() throws {
+        try preserveLeftoverRestoreFolder(leftoverRestoreDirectory)
+    }
+
+    private var leftoverRestoreDirectory: URL {
+        localDirectory.deletingLastPathComponent()
+            .appendingPathComponent("\(localDirectory.lastPathComponent).restore.old", isDirectory: true)
     }
 
     /// True when local data was modified after `date` (always true when `date` is nil),

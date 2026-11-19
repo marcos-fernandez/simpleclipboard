@@ -390,6 +390,24 @@ struct BackupServiceTests {
         #expect(read(preserved[0].appendingPathComponent("tags.json")) == tagsJSON("origTags"))
     }
 
+    @Test func aRestoreInterruptedByACrashIsRecoveredAtLaunch() throws {
+        // The crash left the user's history in the leftover folder and nothing in its place: loaded like that,
+        // the store would start empty and the first copy would delete the images.
+        try write(historyJSON("orig"), to: leftoverRestoreFolder.appendingPathComponent("history.json"))
+        try write("origPng", to: leftoverRestoreFolder.appendingPathComponent("images/b.png"))
+        try write(tagsJSON("restoredTags"), to: local.appendingPathComponent("tags.json"))
+        try write(tagsJSON("origTags"), to: leftoverRestoreFolder.appendingPathComponent("tags.json"))
+
+        try makeService().recoverInterruptedRestore()
+
+        #expect(read(local.appendingPathComponent("history.json")) == historyJSON("orig"))
+        #expect(read(local.appendingPathComponent("images/b.png")) == "origPng")
+        #expect(read(local.appendingPathComponent("tags.json")) == tagsJSON("restoredTags"))
+        let preserved = try preservedFolders()
+        #expect(preserved.count == 1)
+        #expect(read(preserved[0].appendingPathComponent("tags.json")) == tagsJSON("origTags"))
+    }
+
     @Test func failureReplacingTheBackupKeepsThePreviousBackupRestorable() throws {
         try writeLocalData(history: "v1")
         let service = makeService()

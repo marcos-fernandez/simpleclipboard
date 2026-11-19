@@ -75,8 +75,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             iCloudDriveRoot: iCloudDriveRoot
         )
 
-        store = HistoryStore(persistence: FilePersistence(directory: directory))
         backup = BackupService(localDirectory: directory, iCloudDriveRoot: iCloudDriveRoot)
+        // Before FilePersistence, which creates an empty images/ that would keep the leftover images out.
+        do {
+            try backup.recoverInterruptedRestore()
+        } catch {
+            Self.logger.error("Cannot recover an interrupted restore: \(error.localizedDescription, privacy: .public)")
+        }
+        store = HistoryStore(persistence: FilePersistence(directory: directory))
         restoreOnFirstLaunchIfNeeded()
         // After the first-launch restore: a new Mac must not publish what that restore replaced as deletions.
         sync = SyncService(localDirectory: directory, iCloudDriveRoot: iCloudDriveRoot)
