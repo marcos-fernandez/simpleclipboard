@@ -144,7 +144,7 @@ public final class SyncService {
             local = SyncMerge.adoptingRemoteTags(local, remotes: remote.states, now: now())
         }
         var result = SyncMerge.merge(local: local, remotes: remote.states, concealedHashes: store.concealedHashes, now: now())
-        result.items = result.items.filter(ensureLocalImage)
+        result.items = result.items.filter { Self.hasAcceptableContent($0) && ensureLocalImage($0) }
         store.applySync(result)
         do {
             try publish(deviceID: deviceID, store: store)
@@ -264,6 +264,10 @@ public final class SyncService {
                     }
                     continue
                 }
+                // Each Mac writes only <its device ID>.json: any other content is a copy or a forgery.
+                guard state.deviceID == remoteID else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
                 cache[remoteID] = (modified, state)
                 if isLive(state) {
                     read.states.append(state)
@@ -284,6 +288,26 @@ public final class SyncService {
         now().timeIntervalSince(state.publishedAt) <= Config.syncRetention
     }
 
+    /// What `HistoryStore.add` would never save from a copy must not get in through another Mac's file either: an
+    /// item without its content, or a text over `Config.maxTextBytes` (the image's size is checked when it is copied).
+    private static func hasAcceptableContent(_ item: SyncItem) -> Bool {
+        switch item.kind {
+        case .text:
+            guard let text = item.text else {
+                return false
+            }
+            return text.utf8.count <= Config.maxTextBytes
+        case .image:
+            return item.imageFileName != nil
+        }
+    }
+
+    /// The image name of an item comes from a file: another Mac's in iCloud Drive, or this Mac's history.json.
+    /// "../history.json" would make a copy read or write, or the store read, outside the images folder.
+    private static func isPlainFileName(_ name: String) -> Bool {
+        !name.isEmpty && !name.hasPrefix(".") && !name.contains("/")
+    }
+
     /// A text item needs nothing. An image item enters only once its PNG is in the local images folder: copied from
     /// Sync/images/ when it is there and downloaded, otherwise requested from iCloud and retried next round, so the
     /// panel never shows an empty card.
@@ -291,9 +315,8 @@ public final class SyncService {
         guard let name = item.imageFileName else {
             return true
         }
-        // The name comes from another Mac's file in iCloud Drive: "../history.json" would make the copy write, or
-        // the store read, outside images/. Anything but a plain file name is treated like a missing image.
-        guard !name.isEmpty, !name.hasPrefix("."), !name.contains("/") else {
+        // Anything but a plain file name is treated like a missing image.
+        guard Self.isPlainFileName(name) else {
             return false
         }
         let local = localImagesDirectory.appendingPathComponent(name)
@@ -306,6 +329,12 @@ public final class SyncService {
         }
         guard isDownloaded(shared) else {
             try? fileManager.startDownloadingUbiquitousItem(at: shared)
+            return false
+        }
+        // Only a regular file within `Config.maxImageBytes`: a symlink would be copied as a link to anywhere on disk.
+        let attributes = try? fileManager.attributesOfItem(atPath: shared.path)
+        guard attributes?[.type] as? FileAttributeType == .typeRegular,
+              let size = attributes?[.size] as? Int, size <= Config.maxImageBytes else {
             return false
         }
         do {
@@ -332,7 +361,7 @@ public final class SyncService {
         }
         try fileManager.createDirectory(at: devicesDirectory, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: imagesDirectory, withIntermediateDirectories: true)
-        for name in Set(snapshot.items.compactMap(\.imageFileName)) {
+        for name in Set(snapshot.items.compactMap(\.imageFileName)) where Self.isPlainFileName(name) {
             let shared = imagesDirectory.appendingPathComponent(name)
             if !fileManager.fileExists(atPath: shared.path) {
                 try copyImage(from: localImagesDirectory.appendingPathComponent(name), to: shared)

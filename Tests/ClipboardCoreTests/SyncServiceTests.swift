@@ -279,6 +279,79 @@ struct SyncServiceTests {
         #expect(try Data(contentsOf: history) == before)
     }
 
+    func remoteItem(_ hash: String, kind: ClipItem.Kind = .text, text: String? = nil, imageFileName: String? = nil) -> SyncItem {
+        SyncItem(
+            contentHash: hash, kind: kind, text: text, imageFileName: imageFileName, createdAt: clock.current,
+            sourceAppBundleID: nil, sourceAppName: nil, tagID: nil, tagChangedAt: SyncState.unstamped
+        )
+    }
+
+    func publishRemote(_ items: [SyncItem], as deviceID: String = "other", inFile name: String = "other") throws {
+        let remote = SyncState(deviceID: deviceID, publishedAt: clock.current, items: items, tags: [], deletions: [])
+        try JSONEncoder().encode(remote).write(to: syncFolder.appendingPathComponent("devices/\(name).json"))
+    }
+
+    // A file in iCloud Drive is not trusted more than the clipboard: what the app would never save from a copy (too
+    // big, or an item without its content) must not get in through another Mac's file either.
+    @Test func syncedItemsOverTheLimitsOrWithoutContentAreIgnored() throws {
+        let a = try makeMac("A")
+        a.store.add(.text("one"), source: safari, concealed: false)
+        a.round()
+        let huge = syncFolder.appendingPathComponent("images/huge.png")
+        try Data(count: Config.maxImageBytes + 1).write(to: huge)
+        try publishRemote([
+            remoteItem("long", text: String(repeating: "x", count: Config.maxTextBytes + 1)),
+            remoteItem("huge", kind: .image, imageFileName: "huge.png"),
+            remoteItem("noText"),
+            remoteItem("noImage", kind: .image),
+        ])
+        a.round()
+        #expect(a.store.items.map(\.text) == ["one"])
+        #expect(!fileManager.fileExists(atPath: a.directory.appendingPathComponent("images/huge.png").path))
+    }
+
+    // Each Mac writes only <its device ID>.json. A file whose content names another device is a copy or a forgery:
+    // merging it would mix in a Mac that is not there, or, with this Mac's own ID, its own past state.
+    @Test func aFileWhoseDeviceIDDoesNotMatchItsNameIsIgnored() throws {
+        let a = try makeMac("A")
+        a.round()
+        try publishRemote([remoteItem("forged", text: "forged")], as: "someone-else")
+        a.round()
+        #expect(a.store.items.isEmpty)
+    }
+
+    // Copying a symlink would put a link to anywhere on the disk into this Mac's images folder, and the store would
+    // read through it.
+    @Test func aSharedImageThatIsNotARegularFileIsIgnored() throws {
+        let a = try makeMac("A")
+        a.round()
+        let outside = root.appendingPathComponent("outside.png")
+        try Data([1, 2, 3]).write(to: outside)
+        try fileManager.createSymbolicLink(at: syncFolder.appendingPathComponent("images/link.png"), withDestinationURL: outside)
+        try publishRemote([remoteItem("link", kind: .image, imageFileName: "link.png")])
+        a.round()
+        #expect(a.store.items.isEmpty)
+        #expect((try? fileManager.destinationOfSymbolicLink(atPath: a.directory.appendingPathComponent("images/link.png").path)) == nil)
+    }
+
+    // The image name of a local item comes from history.json: "../secret" would make publishing copy a file from
+    // outside the images folder into iCloud Drive, or write outside Sync/images.
+    @Test func aLocalImageNameOutsideTheFolderIsNeverPublished() throws {
+        let directory = root.appendingPathComponent("A", isDirectory: true)
+        try fileManager.createDirectory(at: directory.appendingPathComponent("images"), withIntermediateDirectories: true)
+        try Data("private-content".utf8).write(to: directory.appendingPathComponent("secret.png"))
+        FilePersistence(directory: directory).save([
+            ClipItem(
+                createdAt: clock.current, kind: .image, text: nil, imageFileName: "../secret.png", contentHash: "escaping",
+                source: safari, isConcealed: false, expiresAt: nil
+            ),
+        ])
+        let a = try makeMac("A")
+        #expect(a.store.items.count == 1)
+        a.round()
+        #expect(try !iCloudContains("private-content"))
+    }
+
     // The grace counts from when the image reached iCloud, not from its age: a backlog image can be weeks old, and
     // another Mac that sees the PNG before this Mac's file lists it must not take it for unused and delete it.
     @Test func aPublishedOldImageGetsTheFullGracePeriod() throws {
