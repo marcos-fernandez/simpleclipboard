@@ -39,6 +39,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var syncItem: NSMenuItem!
     private var syncInfoItem: NSMenuItem!
 
+    /// One for the app's lifetime: a session is only freed once invalidated.
+    private let updateSession = UpdateCheck.makeSession()
+    private var updateTimer: Timer?
+    private var availableUpdate: AppVersion?
+    private var updateItem: NSMenuItem!
+    private var updateSeparator: NSMenuItem!
+
     private static let relativeFormatter = RelativeDateTimeFormatter()
 
     private var lastBackupDate: Date? {
@@ -148,6 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         setUpStatusItem(hotkeyRegistered: hotkeyRegistered)
+        startUpdateChecks()
         registerLoginItem()
         requestAccessibilityIfNeeded()
     }
@@ -164,6 +172,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: Config.appName)
 
         let menu = NSMenu()
+        // Hidden until a check finds a newer release, so without one the menu is unchanged.
+        updateItem = NSMenuItem(title: "", action: #selector(openReleasesPage), keyEquivalent: "")
+        updateItem.target = self
+        updateItem.isHidden = true
+        menu.addItem(updateItem)
+        updateSeparator = .separator()
+        updateSeparator.isHidden = true
+        menu.addItem(updateSeparator)
         if !hotkeyRegistered {
             let warning = NSMenuItem(title: "⚠︎ Could not register ⇧⌘V", action: nil, keyEquivalent: "")
             warning.isEnabled = false
@@ -218,6 +234,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         // Hand focus back so the next ⇧⌘V targets the app the user was in, not us.
         NSApp.hide(nil)
+    }
+
+    // MARK: updates
+
+    /// Checks `Config.updateCheckLaunchDelay` after launch and every `Config.updateCheckInterval`. A failed check is
+    /// silent and changes nothing: the next one tries again.
+    private func startUpdateChecks() {
+        let timer = Timer(timeInterval: Config.updateCheckInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.checkForUpdate()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        updateTimer = timer
+        let launchTimer = Timer(timeInterval: Config.updateCheckLaunchDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.checkForUpdate()
+            }
+        }
+        RunLoop.main.add(launchTimer, forMode: .common)
+    }
+
+    private func checkForUpdate() {
+        let session = updateSession
+        let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        Task { [weak self] in
+            // The request and the parsing run off the main actor; only the result comes back to it.
+            let result = await UpdateCheck.check(currentVersion: currentVersion) {
+                try await session.data(from: Config.latestReleaseAPIURL)
+            }
+            self?.showUpdate(result)
+        }
+    }
+
+    private func showUpdate(_ result: UpdateCheckResult) {
+        availableUpdate = result.availableUpdate(replacing: availableUpdate)
+        updateItem.isHidden = availableUpdate == nil
+        updateSeparator.isHidden = availableUpdate == nil
+        updateItem.title = availableUpdate
+            .map { "Update Available: \($0)…" }
+            ?? ""
+        // Set here and not in menuNeedsUpdate: the icon has to change without the menu being opened.
+        statusItem.button?.image = availableUpdate == nil
+            ? NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: Config.appName)
+            : NSImage(systemSymbolName: "arrow.up.doc.on.clipboard", accessibilityDescription: "\(Config.appName), update available")
+    }
+
+    @objc private func openReleasesPage() {
+        NSWorkspace.shared.open(Config.releasesPageURL)
     }
 
     // MARK: sync

@@ -18,6 +18,10 @@ memory only and disappears after 10 minutes.
    Security and click "Open Anyway" (or run `xattr -dr com.apple.quarantine /Applications/SimpleClipboard.app`).
 3. Grant the Accessibility permission when asked (see Permissions).
 
+The app checks GitHub for a new release shortly after launch and then once a day. When there is one, the menu-bar
+icon changes and the menu shows "Update Available", which opens the release page; nothing is downloaded or installed.
+This is the only network request the app makes, and nothing from the clipboard is sent.
+
 ## Build and install
 
 ```bash

@@ -42,6 +42,17 @@ public enum Config {
     /// which only near-flat images reach, and those are never this large (a 6K screen capture is about 80 MB).
     public static let maxTIFFBytes = 16 * maxImageBytes
 
+    /// Built here, never taken from the response: the menu item only ever opens this page.
+    public static let releasesPageURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard/releases/latest")!
+    public static let latestReleaseAPIURL = URL(
+        string: "https://api.github.com/repos/marcos-fernandez/simpleclipboard/releases/latest"
+    )!
+    /// Unauthenticated GitHub API calls are limited per IP address: once a day is plenty to hear of a release.
+    public static let updateCheckInterval: TimeInterval = 24 * 60 * 60
+    /// Also once this long after launch, as the app mostly starts at login, before the network may be up.
+    public static let updateCheckLaunchDelay: TimeInterval = 60
+    public static let updateCheckTimeout: TimeInterval = 30
+
     public static let concealedSourceBundleIDs: Set<String> = [
         "com.1password.1password",
         "com.agilebits.onepassword7",
