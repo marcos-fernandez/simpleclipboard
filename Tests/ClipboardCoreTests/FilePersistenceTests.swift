@@ -258,6 +258,39 @@ struct FilePersistenceTests {
         #expect(FilePersistence(directory: directory).loadTags() == tags)
     }
 
+    @Test func unchangedTagsAreNotWrittenAgain() throws {
+        // Every copy and paste saves; the tags rarely change, so rewriting tags.json and its copy each time is
+        // disk work for nothing. A change must still be written.
+        let tagsURL = directory.appendingPathComponent("tags.json")
+        let persistence = FilePersistence(directory: directory)
+        let tags = [Tag(name: "Work", colorIndex: 0)]
+        persistence.saveTags(tags)
+        let past = Date(timeIntervalSince1970: 1_000_000)
+        try FileManager.default.setAttributes([.modificationDate: past], ofItemAtPath: tagsURL.path)
+
+        persistence.saveTags(tags)
+        let unchanged = try FileManager.default.attributesOfItem(atPath: tagsURL.path)[.modificationDate] as? Date
+        #expect(unchanged == past)
+
+        persistence.saveTags(tags + [Tag(name: "Home", colorIndex: 1)])
+        #expect(FilePersistence(directory: directory).loadTags().map(\.name) == ["Work", "Home"])
+    }
+
+    @Test func tagsReadFromDiskAreWrittenAgainEvenIfTheyMatchTheLastSave() throws {
+        // A restore replaces tags.json behind the persistence's back and then loads it: the next save must write
+        // what the store holds, not trust what was written before the restore.
+        let tagsURL = directory.appendingPathComponent("tags.json")
+        let persistence = FilePersistence(directory: directory)
+        let tags = [Tag(name: "Work", colorIndex: 0)]
+        persistence.saveTags(tags)
+        try JSONEncoder().encode([Tag(name: "Restored", colorIndex: 2)]).write(to: tagsURL)
+        _ = persistence.loadTags()
+
+        persistence.saveTags(tags)
+
+        #expect(FilePersistence(directory: directory).loadTags() == tags)
+    }
+
     @Test func tagsAreReportedLostOnlyWhenTheFileWasThereAndNothingCouldBeRecovered() throws {
         // The store keeps the items' tags only for a real loss: no tags file is normal (a v1 install has none),
         // and a recovered copy already brings the tags back.

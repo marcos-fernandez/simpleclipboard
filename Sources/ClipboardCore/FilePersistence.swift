@@ -14,6 +14,9 @@ public final class FilePersistence: HistoryPersistence {
     private var unsafeToSave: Set<URL> = []
     /// Files found unreadable at their last load with no usable copy of the last save (see `recoverCopy`).
     private var unrecovered: Set<URL> = []
+    /// The tags of the last successful save since the last `loadTags()`: saving them again would rewrite tags.json and
+    /// its copy on every copy and paste for nothing. Cleared on load, since a restore replaces the file underneath.
+    private var savedTags: [Tag]?
 
     public init(directory: URL) {
         historyURL = directory.appendingPathComponent("history.json")
@@ -38,7 +41,8 @@ public final class FilePersistence: HistoryPersistence {
     }
 
     public func loadTags() -> [Tag] {
-        loadArray(from: tagsURL, movingCorruptTo: tagsBackupURL)
+        savedTags = nil
+        return loadArray(from: tagsURL, movingCorruptTo: tagsBackupURL)
     }
 
     /// True when a file found damaged at its last load could not be recovered: what the store shows is not all
@@ -52,7 +56,12 @@ public final class FilePersistence: HistoryPersistence {
     }
 
     public func saveTags(_ tags: [Tag]) {
-        saveArray(tags, to: tagsURL)
+        guard tags != savedTags else {
+            return
+        }
+        if saveArray(tags, to: tagsURL) {
+            savedTags = tags
+        }
     }
 
     public func writeImage(_ data: Data, named name: String) throws {
