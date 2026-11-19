@@ -246,6 +246,10 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     /// Returns true when the key was handled; arrows never move the text cursor.
     private func handle(_ event: NSEvent) -> Bool {
+        // While an input method is composing (e.g. Japanese), Return confirms a candidate and arrows move within it.
+        if let input = panel.firstResponder as? NSTextInputClient, input.hasMarkedText() {
+            return false
+        }
         if state.overlay != nil {
             return handleOverlayKey(event)
         }
