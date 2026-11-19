@@ -8,14 +8,17 @@ final class ClipboardMonitor {
     private static let logger = Logger(subsystem: Config.bundleID, category: "ClipboardMonitor")
 
     private let pasteboard = NSPasteboard.general
-    private let store: HistoryStore
+    /// Converts and hashes off the main thread, and adds to the store in the order copied.
+    private let captures: CaptureQueue
     private var lastChangeCount: Int
     private var timer: Timer?
     /// Apps that lost focus since the previous poll (e.g. 1Password handing focus back to the browser).
     private var recentlyDeactivated: Set<String> = []
 
     init(store: HistoryStore) {
-        self.store = store
+        captures = CaptureQueue(store: store) { tiff in
+            NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+        }
         lastChangeCount = pasteboard.changeCount
         _ = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didDeactivateApplicationNotification,
@@ -59,26 +62,26 @@ final class ClipboardMonitor {
             sourceBundleID: frontApp?.bundleIdentifier,
             recentSourceBundleIDs: recentSourceBundleIDs
         )
-        guard classification != .ignore, let content = readContent() else {
+        guard classification != .ignore, let capture = readCapture() else {
             return
         }
         let source = SourceApp(bundleID: frontApp?.bundleIdentifier, name: frontApp?.localizedName)
-        let item = store.add(content, source: source, concealed: classification == .concealed)
-        Self.logger.debug("Captured kind=\(item?.kind.rawValue ?? "none", privacy: .public) concealed=\(classification == .concealed)")
+        captures.add(capture, source: source, concealed: classification == .concealed)
+        Self.logger.debug("Read a copy, concealed=\(classification == .concealed)")
     }
 
-    /// Text wins over image, unless the text is blank.
-    private func readContent() -> ClipContent? {
+    /// Adds the copies still being converted (at quit).
+    func flush() {
+        captures.flush()
+    }
+
+    /// Text wins over image, unless the text is blank. Only read here: a TIFF is converted later, off the main thread.
+    private func readCapture() -> PasteboardCapture? {
         PasteboardContent.choose(text: pasteboard.string(forType: .string)) {
             if let png = pasteboard.data(forType: .png) {
-                return png
+                return .png(png)
             }
-            if let tiff = pasteboard.data(forType: .tiff),
-               let bitmap = NSBitmapImageRep(data: tiff),
-               let png = bitmap.representation(using: .png, properties: [:]) {
-                return png
-            }
-            return nil
+            return pasteboard.data(forType: .tiff).map(PasteboardImage.tiff)
         }
     }
 }

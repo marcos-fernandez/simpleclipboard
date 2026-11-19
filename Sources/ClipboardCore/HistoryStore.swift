@@ -12,7 +12,7 @@ public final class HistoryStore {
         case tag(UUID)
     }
 
-    private static let logger = Logger(subsystem: Config.bundleID, category: "HistoryStore")
+    private nonisolated static let logger = Logger(subsystem: Config.bundleID, category: "HistoryStore")
     /// How far after the last known stamp a change is dated when this clock is behind it (`stamp(after:)`).
     private static let stampStep: TimeInterval = 0.001
 
@@ -74,22 +74,42 @@ public final class HistoryStore {
 
     // MARK: capture
 
-    @discardableResult
-    public func add(_ content: ClipContent, source: SourceApp, concealed: Bool) -> ClipItem? {
+    /// Content within the limits, with its hash: what `add` needs that can be worked out off the main thread.
+    public struct PreparedContent: Sendable {
+        let content: ClipContent
+        let hash: String
+    }
+
+    /// Checks the limits and hashes the content (seconds for a large image), on any thread. Nil when over the limits.
+    public nonisolated static func prepare(_ content: ClipContent) -> PreparedContent? {
         // Checked before hashing, so a huge copy costs nothing; only the size is logged, never the content.
         switch content {
         case .text(let text):
             guard text.utf8.count <= Config.maxTextBytes else {
-                Self.logger.notice("Dropping text of \(text.utf8.count, privacy: .public) bytes, over the limit")
+                logger.notice("Dropping text of \(text.utf8.count, privacy: .public) bytes, over the limit")
                 return nil
             }
         case .image(let data):
             guard data.count <= Config.maxImageBytes else {
-                Self.logger.notice("Dropping image of \(data.count, privacy: .public) bytes, over the limit")
+                logger.notice("Dropping image of \(data.count, privacy: .public) bytes, over the limit")
                 return nil
             }
         }
-        let hash = Self.hash(of: content)
+        return PreparedContent(content: content, hash: hash(of: content))
+    }
+
+    @discardableResult
+    public func add(_ content: ClipContent, source: SourceApp, concealed: Bool) -> ClipItem? {
+        guard let prepared = Self.prepare(content) else {
+            return nil
+        }
+        return add(prepared, source: source, concealed: concealed)
+    }
+
+    @discardableResult
+    public func add(_ prepared: PreparedContent, source: SourceApp, concealed: Bool) -> ClipItem? {
+        let content = prepared.content
+        let hash = prepared.hash
         let previous = items.first { $0.contentHash == hash }
         // A plain copy is dated after the previous copy and after any deletion of the same content this Mac knows of,
         // so it survives them in the merge. A concealed one keeps this clock's time: it never leaves the Mac and
@@ -548,7 +568,7 @@ public final class HistoryStore {
         onPersist?()
     }
 
-    private static func hash(of content: ClipContent) -> String {
+    private nonisolated static func hash(of content: ClipContent) -> String {
         var hasher = SHA256()
         switch content {
         case .text(let text):

@@ -8,11 +8,11 @@ struct PasteboardContentTests {
     let png = Data([0x89, 0x50, 0x4E, 0x47])
 
     @Test func textWinsOverImage() {
-        #expect(PasteboardContent.choose(text: "Quarterly report", image: { png }) == .text("Quarterly report"))
+        #expect(PasteboardContent.choose(text: "Quarterly report", image: { .png(png) }) == .text("Quarterly report"))
     }
 
     @Test func blankTextFallsThroughToImage() {
-        #expect(PasteboardContent.choose(text: " \n\t", image: { png }) == .image(png))
+        #expect(PasteboardContent.choose(text: " \n\t", image: { .png(png) }) == .image(.png(png)))
     }
 
     @Test func blankTextWithoutImageRecordsNothing() {
@@ -24,7 +24,7 @@ struct PasteboardContentTests {
         var imageRead = false
         _ = PasteboardContent.choose(text: "hello", image: {
             imageRead = true
-            return png
+            return .png(png)
         })
         #expect(!imageRead)
     }

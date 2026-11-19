@@ -37,6 +37,10 @@ public enum Config {
     /// huge item would make every later copy slow.
     public static let maxTextBytes = 2 * 1024 * 1024
     public static let maxImageBytes = 20 * 1024 * 1024
+    /// A TIFF is refused unconverted beyond this. It is uncompressed, so its size is not the PNG's: the limit above
+    /// applies after the conversion. Beyond 16 times that limit the PNG would need over 16:1 compression to fit,
+    /// which only near-flat images reach, and those are never this large (a 6K screen capture is about 80 MB).
+    public static let maxTIFFBytes = 16 * maxImageBytes
 
     public static let concealedSourceBundleIDs: Set<String> = [
         "com.1password.1password",

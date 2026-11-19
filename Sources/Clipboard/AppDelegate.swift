@@ -149,7 +149,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // The last changes may still be on their way to disk.
+        // The last copies may still be converting, and the last changes on their way to disk.
+        monitor.flush()
         persistence.flush()
         Paster.clearConcealedValue()
     }
