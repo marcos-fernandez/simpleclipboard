@@ -18,7 +18,7 @@ public final class HistoryStore {
     public private(set) var items: [ClipItem] = []
     /// Creation order (the order of the panel tabs).
     public private(set) var tags: [Tag] = []
-    /// Set only while sync is on (`SyncService`): the deletions other Macs must apply are handed over here. One call
+    /// Connected to `SyncService.record`, which decides what to keep: the deletions other Macs must apply. One call
     /// per store operation with all its deletions, and none when there are none: `SyncService` saves its file once
     /// per call, so a call per item would rewrite it once per item on the main thread.
     public var deletionRecorder: (@MainActor ([SyncDeletion]) -> Void)?

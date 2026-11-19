@@ -237,12 +237,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         runSync()
     }
 
-    /// Deletions are recorded for other Macs only while sync is on.
+    /// Connected whether sync is on or not: `SyncService.record` keeps deletions made while it is off once this Mac
+    /// has joined, so turning sync on again does not bring them back.
     private func connectDeletionRecorder() {
-        guard sync.isEnabled else {
-            store.deletionRecorder = nil
-            return
-        }
         store.deletionRecorder = { [weak self] deletions in
             self?.sync.record(deletions)
         }
@@ -276,7 +273,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 Self.logger.error("Cannot enable sync: \(error.localizedDescription, privacy: .public)")
             }
         }
-        connectDeletionRecorder()
         runSync()
     }
 

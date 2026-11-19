@@ -38,14 +38,15 @@ struct SyncServiceTests {
     }
 
     /// Each simulated Mac has its own machine ID, so the real one of the Mac running the tests never decides anything.
+    /// The recorder is connected whether sync is on or not, as the app does: `SyncService.record` decides what to keep.
     func makeMac(_ name: String, enabled: Bool = true) throws -> Mac {
         let directory = root.appendingPathComponent(name, isDirectory: true)
         let store = HistoryStore(persistence: FilePersistence(directory: directory), now: { [clock] in clock.current })
         let sync = makeSync(directory: directory, machineID: name)
         if enabled {
             try sync.enable()
-            store.deletionRecorder = { [sync] in sync.record($0) }
         }
+        store.deletionRecorder = { [sync] in sync.record($0) }
         return Mac(directory: directory, store: store, sync: sync)
     }
 
@@ -626,6 +627,46 @@ struct SyncServiceTests {
             #expect(mac.store.tags.map(\.name) == ["Office"])
             #expect(mac.store.items.map(\.tagID) == [survivor.id])
         }
+    }
+
+    // Turning sync off for a while is not leaving: the Mac's file still lists everything it had. A deletion made
+    // meanwhile (often of something sensitive) must reach the other Macs once sync is back on, or the other Mac's
+    // file brings the item back here and it is never removed there.
+    @Test func deletionsMadeWhileSyncIsOffReachTheOtherMacOnceItIsBackOn() throws {
+        let a = try makeMac("A")
+        let b = try makeMac("B")
+        a.store.add(.text("one"), source: safari, concealed: false)
+        clock.advance(1)
+        a.store.add(.text("sensitive"), source: safari, concealed: false)
+        a.round()
+        b.round()
+        b.sync.disable()
+        clock.advance(60)
+        let sensitive = try #require(b.store.items.first { $0.text == "sensitive" })
+        b.store.remove(id: sensitive.id)
+        let relaunched = makeSync(directory: b.directory, machineID: "B")
+        try relaunched.enable()
+        let bAfterRelaunch = Mac(directory: b.directory, store: b.store, sync: relaunched)
+        for _ in 0..<2 {
+            clock.advance(30)
+            bAfterRelaunch.round()
+            a.round()
+        }
+        #expect(a.store.items.map(\.text) == ["one"])
+        #expect(b.store.items.map(\.text) == ["one"])
+    }
+
+    // A Mac that never turned sync on has nobody to tell: it must not keep a growing list of deletions in sync.json,
+    // nor publish them, possibly months later, when sync is first turned on.
+    @Test func aMacThatNeverTurnedSyncOnKeepsNoDeletions() throws {
+        let a = try makeMac("A", enabled: false)
+        let one = try #require(a.store.add(.text("one"), source: safari, concealed: false))
+        clock.advance(1)
+        a.store.remove(id: one.id)
+        #expect(!fileManager.fileExists(atPath: a.directory.appendingPathComponent("sync.json").path))
+        try a.sync.enable()
+        a.round()
+        #expect(try JSONDecoder().decode(SyncState.self, from: Data(contentsOf: publishedFile())).deletions.isEmpty)
     }
 
     @Test func deletionsSurviveARelaunch() throws {

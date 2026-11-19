@@ -99,10 +99,11 @@ struct HistoryStoreSyncTests {
 
     // MARK: deletions
 
-    @Test func deletionsAreOnlyHandedOverWhileSyncIsOn() throws {
+    // The store hands every deletion to whatever recorder is connected; whether to keep it (sync on, or off after
+    // joining) is `SyncService.record`'s decision. Without one nothing is handed over and nothing breaks.
+    @Test func deletionsAreHandedOverToTheConnectedRecorder() throws {
         let store = makeStore()
         let first = try #require(store.add(.text("one"), source: safari, concealed: false))
-        // No recorder (sync off): nothing to hand over, nothing breaks.
         store.remove(id: first.id)
         let recorder = recording(store)
         let second = try #require(store.add(.text("two"), source: safari, concealed: false))

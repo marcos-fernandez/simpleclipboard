@@ -113,7 +113,13 @@ public final class SyncService {
     /// The deletions of one store operation that other Macs must apply (`HistoryStore.deletionRecorder`). Kept
     /// `Config.syncRetention`, across relaunches. Saved once however many there are: clearing a full history would
     /// otherwise rewrite sync.json (which holds up to 90 days of deletions) once per item, on the main thread.
+    /// Kept also while sync is off once this Mac has joined: its file still lists everything, so a deletion made
+    /// meanwhile would otherwise be undone by the other Macs when sync is turned on again. A Mac that never joined
+    /// has nobody to tell and keeps nothing.
     public func record(_ deletions: [SyncDeletion]) {
+        guard settings.isEnabled || settings.hasJoined else {
+            return
+        }
         settings.deletions = liveDeletions() + deletions
         saveSettings()
     }
