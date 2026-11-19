@@ -30,7 +30,8 @@ public final class FilePersistence: HistoryPersistence {
         loadArray(from: historyURL, movingCorruptTo: backupURL)
     }
 
-    public func save(_ items: [ClipItem]) {
+    @discardableResult
+    public func save(_ items: [ClipItem]) -> Bool {
         saveArray(items, to: historyURL)
     }
 
@@ -152,17 +153,20 @@ public final class FilePersistence: HistoryPersistence {
             .appendingPathComponent("\(stamped.lastPathComponent)-\(UUID().uuidString.prefix(8))")
     }
 
-    private func saveArray<Element: Encodable>(_ elements: [Element], to url: URL) {
+    @discardableResult
+    private func saveArray<Element: Encodable>(_ elements: [Element], to url: URL) -> Bool {
         guard !unsafeToSave.contains(url) else {
             Self.logger.error("Not saving \(url.lastPathComponent, privacy: .public): the unreadable file is still there")
-            return
+            return false
         }
         do {
             let data = try JSONEncoder().encode(elements)
             try data.write(to: url, options: .atomic)
             keepCopy(of: url)
+            return true
         } catch {
             Self.logger.error("Cannot save \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 }

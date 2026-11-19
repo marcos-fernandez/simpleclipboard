@@ -103,6 +103,20 @@ struct FilePersistenceTests {
         #expect(String(decoding: try Data(contentsOf: historyURL), as: UTF8.self) == "not json")
     }
 
+    @Test func aSaveThatCannotBeWrittenSaysSo() throws {
+        // The store deletes unused images only after a successful save: a failure reported as
+        // success would delete the images the history on disk still lists.
+        let persistence = FilePersistence(directory: directory)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+
+        #expect(!persistence.save([makeItem("new")]))
+    }
+
     @Test func imagesAreKeptWhileTheDamagedHistoryIsStillInPlace() throws {
         // The history left in place may be recovered by hand; deleting the images it points to
         // (the store asks for that on every save) would leave it pointing at nothing.

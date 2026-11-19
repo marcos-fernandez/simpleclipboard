@@ -6,6 +6,7 @@ final class InMemoryPersistence: HistoryPersistence {
     var storedTags: [Tag]
     var images: [String: Data] = [:]
     var failImageWrites = false
+    var failSaves = false
     var saveCount = 0
 
     init(stored: [ClipItem] = [], storedTags: [Tag] = []) {
@@ -14,9 +15,13 @@ final class InMemoryPersistence: HistoryPersistence {
     }
 
     func load() -> [ClipItem] { stored }
-    func save(_ items: [ClipItem]) {
+    func save(_ items: [ClipItem]) -> Bool {
+        guard !failSaves else {
+            return false
+        }
         stored = items
         saveCount += 1
+        return true
     }
     func loadTags() -> [Tag] { storedTags }
     func saveTags(_ tags: [Tag]) { storedTags = tags }

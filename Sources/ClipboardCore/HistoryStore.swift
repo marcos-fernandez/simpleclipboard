@@ -408,9 +408,12 @@ public final class HistoryStore {
 
     private func persist() {
         let persistable = items.filter { !$0.isConcealed }
-        persistence.save(persistable)
+        let saved = persistence.save(persistable)
         persistence.saveTags(tags)
-        persistence.deleteImages(notIn: Set(persistable.compactMap(\.imageFileName)))
+        // A history that failed to save still lists the items of the last save, images included.
+        if saved {
+            persistence.deleteImages(notIn: Set(persistable.compactMap(\.imageFileName)))
+        }
         onPersist?()
     }
 

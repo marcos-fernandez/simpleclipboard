@@ -217,6 +217,19 @@ struct HistoryStoreTests {
         #expect(persistence.images.isEmpty)
     }
 
+    @Test func imagesAreKeptWhenTheHistoryCannotBeSaved() throws {
+        // A failed save (disk full) leaves the history on disk still listing the item: deleting its image
+        // anyway would leave that item pointing at nothing on the next launch.
+        let store = makeStore()
+        let item = try #require(store.add(.image(Data([1])), source: safari, concealed: false))
+        persistence.failSaves = true
+
+        store.remove(id: item.id)
+
+        #expect(persistence.stored.map(\.id) == [item.id])
+        #expect(persistence.images.count == 1)
+    }
+
     // MARK: user actions
 
     @Test func pastingAnOldItemPromotesItToTheFront() throws {

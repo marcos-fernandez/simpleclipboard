@@ -3,7 +3,9 @@ import Foundation
 public protocol HistoryPersistence {
     /// Returns [] when nothing is stored or the stored file is unreadable.
     func load() -> [ClipItem]
-    func save(_ items: [ClipItem])
+    /// Returns whether the history was written.
+    @discardableResult
+    func save(_ items: [ClipItem]) -> Bool
     /// Returns [] when nothing is stored or the stored file is unreadable.
     func loadTags() -> [Tag]
     func saveTags(_ tags: [Tag])
