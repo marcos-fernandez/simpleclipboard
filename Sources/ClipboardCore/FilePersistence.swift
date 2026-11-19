@@ -50,11 +50,22 @@ public final class FilePersistence: HistoryPersistence {
     }
 
     public func writeImage(_ data: Data, named name: String) throws {
-        try data.write(to: imagesDirectory.appendingPathComponent(name), options: .atomic)
+        guard let url = imageURL(named: name) else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
+        try data.write(to: url, options: .atomic)
     }
 
     public func readImage(named name: String) -> Data? {
-        try? Data(contentsOf: imagesDirectory.appendingPathComponent(name))
+        imageURL(named: name).flatMap { try? Data(contentsOf: $0) }
+    }
+
+    /// Names come from history.json, which may come from a backup: only a plain file name stays inside images/.
+    private func imageURL(named name: String) -> URL? {
+        guard !name.isEmpty, name != ".", name != "..", !name.contains("/") else {
+            return nil
+        }
+        return imagesDirectory.appendingPathComponent(name)
     }
 
     public func deleteImages(notIn keep: Set<String>) {

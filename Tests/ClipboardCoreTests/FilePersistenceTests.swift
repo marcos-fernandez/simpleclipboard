@@ -291,6 +291,21 @@ struct FilePersistenceTests {
         #expect(persistence.readImage(named: "drop.png") == nil)
     }
 
+    @Test(arguments: ["../outside.png", "a/b.png", "..", ".", ""])
+    func anImageNameThatIsNotAPlainFileNameIsRefused(name: String) throws {
+        // Names come from history.json, which may come from a backup: a path would read or write files outside
+        // the images folder.
+        let outside = directory.appendingPathComponent("images-outside", isDirectory: true)
+        let persistence = FilePersistence(directory: outside.appendingPathComponent("store", isDirectory: true))
+        try Data([7]).write(to: outside.appendingPathComponent("store/outside.png"))
+
+        #expect(persistence.readImage(named: name) == nil)
+        #expect(throws: (any Error).self) {
+            try persistence.writeImage(Data([1]), named: name)
+        }
+        #expect(try Data(contentsOf: outside.appendingPathComponent("store/outside.png")) == Data([7]))
+    }
+
     // MARK: tags
 
     @Test func historyWrittenBeforeTagsExistedIsStillRead() throws {
