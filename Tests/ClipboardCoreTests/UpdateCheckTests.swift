@@ -126,6 +126,16 @@ struct UpdateCheckTests {
         #expect(UpdateCheckResult.available(newer).availableUpdate(replacing: AppVersion("1.2.0")) == newer)
     }
 
+    // The app looks every hour because timers stand still during sleep; this is what keeps those looks from
+    // becoming a request to GitHub every hour, while a check that got no answer is retried at the next look.
+    @Test func aCheckIsDueOnlyADayAfterTheLastAnswer() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(UpdateCheck.isDue(lastAnswer: nil, now: now))
+        #expect(!UpdateCheck.isDue(lastAnswer: now.addingTimeInterval(-Config.updateCheckPollInterval), now: now))
+        #expect(!UpdateCheck.isDue(lastAnswer: now.addingTimeInterval(-Config.updateCheckInterval + 1), now: now))
+        #expect(UpdateCheck.isDue(lastAnswer: now.addingTimeInterval(-Config.updateCheckInterval), now: now))
+    }
+
     @Test func theSessionKeepsNothingBetweenChecks() {
         // The app's only network request: no cookies or cached answers that could identify or follow the user.
         let configuration = UpdateCheck.makeSession().configuration

@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let updateSession = UpdateCheck.makeSession()
     private var updateTimer: Timer?
     private var availableUpdate: AppVersion?
+    private var lastUpdateAnswer: Date?
     private var updateItem: NSMenuItem!
     private var updateSeparator: NSMenuItem!
 
@@ -238,10 +239,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: updates
 
-    /// Checks `Config.updateCheckLaunchDelay` after launch and every `Config.updateCheckInterval`. A failed check is
-    /// silent and changes nothing: the next one tries again.
+    /// Checks `Config.updateCheckLaunchDelay` after launch and then whenever `Config.updateCheckInterval` has passed
+    /// since the last answer, looked at every `Config.updateCheckPollInterval`. A failed check is silent and changes
+    /// nothing: the next look tries again.
     private func startUpdateChecks() {
-        let timer = Timer(timeInterval: Config.updateCheckInterval, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: Config.updateCheckPollInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.checkForUpdate()
             }
@@ -257,6 +259,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func checkForUpdate() {
+        guard UpdateCheck.isDue(lastAnswer: lastUpdateAnswer, now: Date()) else {
+            return
+        }
         let session = updateSession
         let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         Task { [weak self] in
@@ -269,6 +274,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func showUpdate(_ result: UpdateCheckResult) {
+        if result != .failed {
+            lastUpdateAnswer = Date()
+        }
         availableUpdate = result.availableUpdate(replacing: availableUpdate)
         updateItem.isHidden = availableUpdate == nil
         updateSeparator.isHidden = availableUpdate == nil
@@ -276,9 +284,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .map { "Update Available: \($0)…" }
             ?? ""
         // Set here and not in menuNeedsUpdate: the icon has to change without the menu being opened.
+        let plainIcon = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: Config.appName)
+        // Falls back to the plain icon: a symbol missing on this macOS would leave the menu-bar item invisible.
         statusItem.button?.image = availableUpdate == nil
-            ? NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: Config.appName)
+            ? plainIcon
             : NSImage(systemSymbolName: "arrow.up.doc.on.clipboard", accessibilityDescription: "\(Config.appName), update available")
+                ?? plainIcon
     }
 
     @objc private func openReleasesPage() {

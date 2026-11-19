@@ -49,6 +49,10 @@ public enum Config {
     )!
     /// Unauthenticated GitHub API calls are limited per IP address: once a day is plenty to hear of a release.
     public static let updateCheckInterval: TimeInterval = 24 * 60 * 60
+    /// How often the app looks whether a check is due. Much shorter than the interval: timers stand still while the
+    /// Mac sleeps, so a single daily one would fire every few days on a laptop, and a failed check is tried again
+    /// after this long instead of a day later.
+    public static let updateCheckPollInterval: TimeInterval = 60 * 60
     /// Also once this long after launch, as the app mostly starts at login, before the network may be up.
     public static let updateCheckLaunchDelay: TimeInterval = 60
     public static let updateCheckTimeout: TimeInterval = 30

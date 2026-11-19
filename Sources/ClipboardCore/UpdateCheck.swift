@@ -80,6 +80,14 @@ public enum UpdateCheck {
         return URLSession(configuration: configuration)
     }
 
+    /// Whether to check now, given when a check last got an answer (nil: never, or only failures since launch).
+    public static func isDue(lastAnswer: Date?, now: Date) -> Bool {
+        guard let lastAnswer else {
+            return true
+        }
+        return now.timeIntervalSince(lastAnswer) >= Config.updateCheckInterval
+    }
+
     /// `fetch` is `URLSession.data(from:)` on `Config.latestReleaseAPIURL`; injected so tests never touch the network.
     public static func check(
         currentVersion: String?,
