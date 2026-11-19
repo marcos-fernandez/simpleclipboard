@@ -184,6 +184,101 @@ struct HistoryStoreTests {
         #expect(store.search("  ").count == 2)
     }
 
+    // The panel asks for the results on every body pass and on every key press: each search reads every text (up to
+    // 2 MiB each) on the main thread, so the same question must be answered once until the store changes, and a change
+    // must never leave the panel showing the old answer.
+
+    @Test func repeatingASearchDoesNotSearchAgain() {
+        let store = makeStore()
+        store.add(.text("hello"), source: safari, concealed: false)
+
+        let first = store.search("hel")
+        let second = store.search("hel")
+
+        #expect(first == second)
+        #expect(store.searchCount == 1)
+    }
+
+    @Test func aDifferentQueryOrScopeSearchesAgain() throws {
+        let store = makeStore()
+        let item = try #require(store.add(.text("hello"), source: safari, concealed: false))
+        let tag = try #require(store.createTag(name: "Work", colorIndex: 0))
+        store.setTag(itemID: item.id, tagID: tag.id)
+
+        #expect(store.search("hel").map(\.text) == ["hello"])
+        #expect(store.search("xyz").isEmpty)
+        #expect(store.search("hel", in: .tag(tag.id)).map(\.text) == ["hello"])
+        #expect(store.searchCount == 3)
+    }
+
+    @Test func aCaptureIsFoundBySearchAfterTheSameQueryWasCached() {
+        let store = makeStore()
+        store.add(.text("hello"), source: safari, concealed: false)
+        _ = store.search("hel")
+
+        store.add(.text("help"), source: safari, concealed: false)
+
+        #expect(store.search("hel").map(\.text) == ["help", "hello"])
+    }
+
+    @Test func aRemovedItemLeavesTheCachedResults() throws {
+        let store = makeStore()
+        let item = try #require(store.add(.text("hello"), source: safari, concealed: false))
+        _ = store.search("")
+
+        store.remove(id: item.id)
+
+        #expect(store.search("").isEmpty)
+    }
+
+    @Test func aTagChangeIsSeenByTheCachedTagScope() throws {
+        let store = makeStore()
+        let item = try #require(store.add(.text("hello"), source: safari, concealed: false))
+        let tag = try #require(store.createTag(name: "Work", colorIndex: 0))
+        #expect(store.search("", in: .tag(tag.id)).isEmpty)
+
+        store.setTag(itemID: item.id, tagID: tag.id)
+
+        #expect(store.search("", in: .tag(tag.id)).map(\.text) == ["hello"])
+    }
+
+    @Test func aPurgedConcealedItemIsNotKeptAliveByTheCache() {
+        // The cached results hold the item itself: kept after the purge, they would keep a secret in memory.
+        let store = makeStore()
+        store.add(.text("s3cr3t"), source: onePassword, concealed: true)
+        #expect(store.search("").count == 1)
+
+        clock.advance(Config.concealedLifetime + 1)
+        store.purgeExpired()
+
+        #expect(store.search("").isEmpty)
+    }
+
+    @Test func aSyncRoundIsSeenByTheCachedSearch() {
+        let store = makeStore()
+        _ = store.search("")
+        let remote = SyncItem(
+            contentHash: "hash-remote", kind: .text, text: "from another Mac", imageFileName: nil,
+            createdAt: clock.current, sourceAppBundleID: nil, sourceAppName: nil,
+            tagID: nil, tagChangedAt: SyncState.unstamped
+        )
+
+        store.applySync(SyncMerge.Result(items: [remote], tags: []))
+
+        #expect(store.search("").map(\.text) == ["from another Mac"])
+    }
+
+    @Test func aReloadFromDiskIsSeenByTheCachedSearch() {
+        let store = makeStore()
+        store.add(.text("before restore"), source: safari, concealed: false)
+        _ = store.search("")
+        persistence.stored = []
+
+        store.reloadFromDisk(markingChanges: false)
+
+        #expect(store.search("").isEmpty)
+    }
+
     // MARK: images
 
     @Test func recopyingTheSameImageKeepsItsFile() {

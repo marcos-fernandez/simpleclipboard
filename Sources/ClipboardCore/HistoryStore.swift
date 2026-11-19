@@ -17,9 +17,17 @@ public final class HistoryStore {
     private static let stampStep: TimeInterval = 0.001
 
     /// Newest first.
-    public private(set) var items: [ClipItem] = []
+    public private(set) var items: [ClipItem] = [] {
+        didSet {
+            lastSearch = nil
+        }
+    }
     /// Creation order (the order of the panel tabs).
-    public private(set) var tags: [Tag] = []
+    public private(set) var tags: [Tag] = [] {
+        didSet {
+            lastSearch = nil
+        }
+    }
     /// Connected to `SyncService.record`, which decides what to keep: the deletions other Macs must apply. One call
     /// per store operation with all its deletions, and none when there are none: `SyncService` saves its file once
     /// per call, so a call per item would rewrite it once per item on the main thread. Deletions made before one is
@@ -46,6 +54,11 @@ public final class HistoryStore {
     private let now: () -> Date
     /// Deletions made while no `deletionRecorder` is connected.
     private var pendingDeletions: [SyncDeletion] = []
+    /// The last search and its results (`search`), dropped whenever the items or tags change. Not observed: it is
+    /// written while the panel reads the results.
+    @ObservationIgnored private var lastSearch: (query: String, scope: Scope, results: [ClipItem])?
+    /// Searches actually run, for the tests.
+    @ObservationIgnored private(set) var searchCount = 0
 
     public init(persistence: HistoryPersistence, now: @escaping () -> Date = Date.init) {
         self.persistence = persistence
@@ -335,7 +348,21 @@ public final class HistoryStore {
 
     // MARK: search and images
 
+    /// The panel asks on every body pass and key press, and each search reads every text: the same question is
+    /// answered from the last search until the items or tags change. `items` is read either way, so a view showing the
+    /// results is still updated when they change.
     public func search(_ query: String, in scope: Scope = .history) -> [ClipItem] {
+        let current = items
+        if let lastSearch, lastSearch.query == query, lastSearch.scope == scope {
+            return lastSearch.results
+        }
+        let results = runSearch(query, in: scope, over: current)
+        lastSearch = (query, scope, results)
+        searchCount += 1
+        return results
+    }
+
+    private func runSearch(_ query: String, in scope: Scope, over items: [ClipItem]) -> [ClipItem] {
         let pool: [ClipItem]
         switch scope {
         case .history:
