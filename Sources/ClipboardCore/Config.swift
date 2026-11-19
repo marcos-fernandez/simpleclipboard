@@ -26,6 +26,9 @@ public enum Config {
     public static let syncImageGrace: TimeInterval = 7 * 24 * 60 * 60
     /// A Mac publishes at least this often, so a quiet one is not taken for gone after `syncRetention`.
     public static let syncRefreshInterval: TimeInterval = 24 * 60 * 60
+    /// A stamp further ahead of this Mac's clock is taken for a broken clock and not followed (`HistoryStore`'s
+    /// `stamp(after:)`): following it would date this Mac's changes, and through them every Mac's, that far ahead.
+    public static let maxClockSkew: TimeInterval = 24 * 60 * 60
     /// How often other Macs' files are checked (also at launch and on wake).
     public static let syncPollInterval: TimeInterval = 30
     /// Publish this long after the last local change, not on every keystroke-like burst of saves.

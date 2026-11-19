@@ -243,6 +243,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.deletionRecorder = { [weak self] deletions in
             self?.sync.record(deletions)
         }
+        store.knownDeletion = { [weak self] contentHash in
+            self?.sync.latestDeletion(ofItem: contentHash)
+        }
     }
 
     private func syncSoon() {

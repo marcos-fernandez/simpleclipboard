@@ -13,6 +13,8 @@ public final class HistoryStore {
     }
 
     private static let logger = Logger(subsystem: Config.bundleID, category: "HistoryStore")
+    /// How far after the last known stamp a change is dated when this clock is behind it (`stamp(after:)`).
+    private static let stampStep: TimeInterval = 0.001
 
     /// Newest first.
     public private(set) var items: [ClipItem] = []
@@ -22,6 +24,9 @@ public final class HistoryStore {
     /// per store operation with all its deletions, and none when there are none: `SyncService` saves its file once
     /// per call, so a call per item would rewrite it once per item on the main thread.
     public var deletionRecorder: (@MainActor ([SyncDeletion]) -> Void)?
+    /// The latest deletion of a content hash this Mac knows of, its own or another Mac's
+    /// (`SyncService.latestDeletion(ofItem:)`): a new copy of that content is dated after it (`stamp(after:)`).
+    public var knownDeletion: (@MainActor (String) -> Date?)?
     /// Called after every save; the app uses it to publish to other Macs shortly after a local change.
     public var onPersist: (@MainActor () -> Void)?
 
@@ -58,7 +63,13 @@ public final class HistoryStore {
             }
         }
         let hash = Self.hash(of: content)
-        let createdAt = now()
+        let previous = items.first { $0.contentHash == hash }
+        // A plain copy is dated after the previous copy and after any deletion of the same content this Mac knows of,
+        // so it survives them in the merge. A concealed one keeps this clock's time: it never leaves the Mac and
+        // `expiresAt` counts from it.
+        let createdAt = concealed
+            ? now()
+            : stamp(after: [previous?.createdAt, knownDeletion?(hash)].compactMap { $0 }.max())
         let expiresAt: Date? = concealed
             ? createdAt.addingTimeInterval(Config.concealedLifetime)
             : nil
@@ -95,12 +106,11 @@ public final class HistoryStore {
         // A re-copy keeps the tag, and when it was set, so other Macs do not take it for a newer tag change.
         // A concealed re-copy drops it (concealed items are never tagged); for a saved value it is also a deletion
         // other Macs must apply, so the value does not stay there as plain text.
-        let previous = items.first { $0.contentHash == hash }
         if !item.isConcealed {
             item.tagID = previous?.tagID
             item.tagChangedAt = previous?.tagChangedAt
         } else if let previous, !previous.isConcealed {
-            recordDeletions([.item(hash, at: createdAt)])
+            recordDeletions([.item(hash, at: stamp(after: SyncItem(previous).lastChange))])
         }
         items.removeAll { $0.contentHash == hash }
         items.insert(item, at: 0)
@@ -114,14 +124,14 @@ public final class HistoryStore {
             return
         }
         var item = items.remove(at: index)
-        item.createdAt = now()
+        item.createdAt = stamp(after: item.createdAt)
         items.insert(item, at: 0)
         persist()
     }
 
     public func remove(id: UUID) {
         if let item = items.first(where: { $0.id == id }), !item.isConcealed {
-            recordDeletions([.item(item.contentHash, at: now())])
+            recordDeletions([.item(item.contentHash, at: stamp(after: SyncItem(item).lastChange))])
         }
         items.removeAll { $0.id == id }
         persist()
@@ -129,8 +139,9 @@ public final class HistoryStore {
 
     /// Clears the untagged items; tagged ones are kept.
     public func removeUntagged() {
-        let current = now()
-        recordDeletions(items.filter { $0.tagID == nil && !$0.isConcealed }.map { .item($0.contentHash, at: current) })
+        recordDeletions(items.filter { $0.tagID == nil && !$0.isConcealed }.map { item in
+            .item(item.contentHash, at: stamp(after: SyncItem(item).lastChange))
+        })
         items.removeAll { $0.tagID == nil }
         persist()
     }
@@ -167,7 +178,7 @@ public final class HistoryStore {
                 return false
             }
             items[index].tagID = tagID
-            items[index].tagChangedAt = now()
+            items[index].tagChangedAt = stamp(after: items[index].tagChangedAt)
         } else if items[index].tagID != nil {
             untag { $0.id == itemID }
             prune()
@@ -183,7 +194,7 @@ public final class HistoryStore {
             return false
         }
         tags[index].name = trimmed
-        tags[index].changedAt = now()
+        tags[index].changedAt = stamp(after: tags[index].changedAt)
         persist()
         return true
     }
@@ -194,15 +205,15 @@ public final class HistoryStore {
             return false
         }
         tags[index].colorIndex = colorIndex
-        tags[index].changedAt = now()
+        tags[index].changedAt = stamp(after: tags[index].changedAt)
         persist()
         return true
     }
 
     /// Its items go back to the history as if just copied; none is deleted.
     public func deleteTag(id: UUID) {
-        if tags.contains(where: { $0.id == id }) {
-            recordDeletions([.tag(id, at: now())])
+        if let tag = tags.first(where: { $0.id == id }) {
+            recordDeletions([.tag(id, at: stamp(after: tag.changedAt))])
         }
         tags.removeAll { $0.id == id }
         untag { $0.tagID == id }
@@ -220,20 +231,29 @@ public final class HistoryStore {
     ///   Macs: stamping it as changed now would undo, once sync is on, everything they did since that backup.
     /// There is no default: forgetting the choice would silently pick one of the two.
     public func reloadFromDisk(markingChanges: Bool) {
-        let current = now()
-        let previousHashes = Set(items.filter { !$0.isConcealed }.map(\.contentHash))
-        let previousTagIDs = Set(tags.map(\.id))
+        let previousItems = Dictionary(
+            items.filter { !$0.isConcealed }.map { ($0.contentHash, SyncItem($0).lastChange) }, uniquingKeysWith: max
+        )
+        let previousTags = Dictionary(tags.map { ($0.id, $0.changedAt) }, uniquingKeysWith: { first, _ in first })
         items = persistence.load()
         tags = persistence.loadTags()
         if markingChanges {
+            // Each stamp is later than the restored version, the one it replaces and a known deletion (`stamp(after:)`).
             for index in items.indices {
-                items[index].tagChangedAt = current
+                let hash = items[index].contentHash
+                let known = [SyncItem(items[index]).lastChange, previousItems[hash], knownDeletion?(hash)]
+                items[index].tagChangedAt = stamp(after: known.compactMap { $0 }.max())
             }
             for index in tags.indices {
-                tags[index].changedAt = current
+                let replaced = previousTags[tags[index].id] ?? nil
+                tags[index].changedAt = stamp(after: [tags[index].changedAt, replaced].compactMap { $0 }.max())
             }
-            let goneItems = previousHashes.subtracting(items.map(\.contentHash)).map { SyncDeletion.item($0, at: current) }
-            let goneTags = previousTagIDs.subtracting(tags.map(\.id)).map { SyncDeletion.tag($0, at: current) }
+            let restoredHashes = Set(items.map(\.contentHash))
+            let restoredTagIDs = Set(tags.map(\.id))
+            let goneItems = previousItems.filter { !restoredHashes.contains($0.key) }
+                .map { SyncDeletion.item($0.key, at: stamp(after: $0.value)) }
+            let goneTags = previousTags.filter { !restoredTagIDs.contains($0.key) }
+                .map { SyncDeletion.tag($0.key, at: stamp(after: $0.value)) }
             recordDeletions(goneItems + goneTags)
         }
         untagOrphans()
@@ -332,6 +352,19 @@ public final class HistoryStore {
         return date
     }
 
+    /// The stamp of a change made here to something last changed at `last` (a hybrid logical clock): this clock's
+    /// time, but always after `last`, which may come from another Mac whose clock is ahead. The merge keeps the later
+    /// stamp, so dated by this clock alone the change would lose to the one it replaces (a deletion would not stick,
+    /// a rename would be undone) until real time caught up. Only this Mac's own stamps change, never the merge, so
+    /// every Mac still ends with the same data. A `last` more than `Config.maxClockSkew` ahead is not followed.
+    private func stamp(after last: Date?) -> Date {
+        let current = now()
+        guard let last, last.timeIntervalSince(current) <= Config.maxClockSkew else {
+            return current
+        }
+        return max(current, last.addingTimeInterval(Self.stampStep))
+    }
+
     /// One call per store operation, and none for an empty list (see `deletionRecorder`).
     private func recordDeletions(_ deletions: [SyncDeletion]) {
         guard !deletions.isEmpty else {
@@ -349,7 +382,8 @@ public final class HistoryStore {
             untagged.tagID = nil
             untagged.createdAt = current
             if stampingTagChange {
-                untagged.tagChangedAt = current
+                untagged.createdAt = stamp(after: SyncItem(item).lastChange)
+                untagged.tagChangedAt = untagged.createdAt
             }
             return untagged
         }

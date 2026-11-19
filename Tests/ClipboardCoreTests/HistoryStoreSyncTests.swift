@@ -176,6 +176,8 @@ struct HistoryStoreSyncTests {
         let store = makeStore()
         let tag = try #require(store.createTag(name: "Work", colorIndex: 0))
         let recorder = recording(store)
+        // Later than the tag's stamp: a deletion in the same instant would be dated just after it (`stamp(after:)`).
+        clock.advance(1)
         store.deleteTag(id: tag.id)
         #expect(recorder.deletions == [.tag(tag.id, at: clock.current)])
     }
@@ -297,6 +299,35 @@ struct HistoryStoreSyncTests {
             contentHash: "remote-\(text)", kind: .text, text: text, imageFileName: nil, createdAt: date,
             sourceAppBundleID: nil, sourceAppName: nil, tagID: nil, tagChangedAt: SyncState.unstamped
         )
+    }
+
+    // MARK: clocks that disagree
+
+    // An item stamped by a Mac whose clock is an hour ahead: a deletion here dated by this clock alone would be
+    // older than the item and lose in the merge. It is dated just after the item's stamp.
+    @Test func aDeletionIsDatedAfterAStampFromAClockAhead() throws {
+        // A real date: TestClock's default (1970) is decades before the "never changed" stamp the item carries.
+        clock.current = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let store = makeStore()
+        let ahead = clock.current.addingTimeInterval(60 * 60)
+        store.applySync(SyncMerge.Result(items: [remote("x", at: ahead)], tags: []))
+        let recorder = recording(store)
+        store.remove(id: try #require(store.items.first).id)
+        let deletedAt = try #require(recorder.deletions.first?.deletedAt)
+        #expect(deletedAt > ahead)
+        #expect(deletedAt < ahead.addingTimeInterval(1))
+    }
+
+    // A clock more than a day ahead is broken, not skewed. Following it would date this Mac's changes that far ahead,
+    // where they beat every real later change on every Mac and escape the retention: such a stamp is not followed.
+    @Test func aStampMoreThanADayAheadIsNotFollowed() throws {
+        clock.current = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let store = makeStore()
+        let farAhead = clock.current.addingTimeInterval(365 * 24 * 60 * 60)
+        store.applySync(SyncMerge.Result(items: [remote("x", at: farAhead)], tags: []))
+        let recorder = recording(store)
+        store.remove(id: try #require(store.items.first).id)
+        #expect(recorder.deletions == [.item("remote-x", at: clock.current)])
     }
 
     @Test func snapshotNeverContainsConcealedItems() {

@@ -39,19 +39,39 @@ struct SyncServiceTests {
 
     /// Each simulated Mac has its own machine ID, so the real one of the Mac running the tests never decides anything.
     /// The recorder is connected whether sync is on or not, as the app does: `SyncService.record` decides what to keep.
-    func makeMac(_ name: String, enabled: Bool = true) throws -> Mac {
+    /// `clockAhead` skews this Mac's clock (store and sync) against the shared one.
+    func makeMac(_ name: String, enabled: Bool = true, clockAhead: TimeInterval = 0) throws -> Mac {
         let directory = root.appendingPathComponent(name, isDirectory: true)
-        let store = HistoryStore(persistence: FilePersistence(directory: directory), now: { [clock] in clock.current })
-        let sync = makeSync(directory: directory, machineID: name)
+        let store = HistoryStore(
+            persistence: FilePersistence(directory: directory), now: { [clock] in clock.current + clockAhead }
+        )
+        let sync = makeSync(directory: directory, machineID: name, clockAhead: clockAhead)
         if enabled {
             try sync.enable()
         }
         store.deletionRecorder = { [sync] in sync.record($0) }
+        store.knownDeletion = { [sync] in sync.latestDeletion(ofItem: $0) }
         return Mac(directory: directory, store: store, sync: sync)
     }
 
-    func makeSync(directory: URL, machineID: String) -> SyncService {
-        SyncService(localDirectory: directory, iCloudDriveRoot: iCloud, now: { [clock] in clock.current }, machineID: machineID)
+    func makeSync(directory: URL, machineID: String, clockAhead: TimeInterval = 0) -> SyncService {
+        SyncService(
+            localDirectory: directory, iCloudDriveRoot: iCloud, now: { [clock] in clock.current + clockAhead },
+            machineID: machineID
+        )
+    }
+
+    /// Settled: further rounds publish nothing new, so the Macs do not keep rewriting their files.
+    func expectSettled(_ macs: [Mac]) throws {
+        let devices = syncFolder.appendingPathComponent("devices", isDirectory: true)
+        let published = try fileManager.contentsOfDirectory(atPath: devices.path).sorted()
+            .map { try Data(contentsOf: devices.appendingPathComponent($0)) }
+        clock.advance(30)
+        for mac in macs {
+            mac.round()
+        }
+        #expect(try fileManager.contentsOfDirectory(atPath: devices.path).sorted()
+            .map { try Data(contentsOf: devices.appendingPathComponent($0)) } == published)
     }
 
     func savedSettings(in directory: URL) throws -> SyncSettings {
@@ -627,6 +647,83 @@ struct SyncServiceTests {
             #expect(mac.store.tags.map(\.name) == ["Office"])
             #expect(mac.store.items.map(\.tagID) == [survivor.id])
         }
+    }
+
+    // MARK: clocks that disagree
+
+    // B's clock is an hour ahead, so what B copies is stamped an hour into A's future. A deletion on A a minute later
+    // must still win: dated by A's clock alone it was older than the item, which came back on A at the next round and
+    // could not be deleted for an hour (a year with a clock a year off).
+    @Test func aDeletionStaysDeletedWhenTheOtherMacsClockIsAhead() throws {
+        let a = try makeMac("A")
+        let b = try makeMac("B", clockAhead: 60 * 60)
+        b.store.add(.text("secret"), source: safari, concealed: false)
+        b.round()
+        a.round()
+        let secret = try #require(a.store.items.first)
+        clock.advance(60)
+        a.store.remove(id: secret.id)
+        for _ in 0..<3 {
+            clock.advance(30)
+            a.round()
+            b.round()
+        }
+        #expect(a.store.items.isEmpty)
+        #expect(b.store.items.isEmpty)
+        try expectSettled([a, b])
+    }
+
+    // The other way round: B, an hour ahead, deletes; A copies the same text again two seconds later. The copy is
+    // the later action and must stay, not vanish at the next round until real time passes B's deletion.
+    @Test func copyingAgainRightAfterAMacWhoseClockIsAheadDeletedItKeepsTheCopy() throws {
+        let a = try makeMac("A")
+        let b = try makeMac("B", clockAhead: 60 * 60)
+        a.store.add(.text("token"), source: safari, concealed: false)
+        a.round()
+        b.round()
+        clock.advance(60)
+        let token = try #require(b.store.items.first)
+        b.store.remove(id: token.id)
+        b.round()
+        a.round()
+        #expect(a.store.items.isEmpty)
+        clock.advance(2)
+        a.store.add(.text("token"), source: safari, concealed: false)
+        for _ in 0..<3 {
+            clock.advance(30)
+            a.round()
+            b.round()
+        }
+        #expect(a.store.items.map(\.text) == ["token"])
+        #expect(b.store.items.map(\.text) == ["token"])
+        try expectSettled([a, b])
+    }
+
+    // A rename and an untag on A, made after B (an hour ahead) created the tag and tagged the item, are the later
+    // changes and must win on both Macs instead of losing to B's future stamps for an hour.
+    @Test func tagChangesWinOverEarlierOnesFromAMacWhoseClockIsAhead() throws {
+        let a = try makeMac("A")
+        let b = try makeMac("B", clockAhead: 60 * 60)
+        let work = try #require(b.store.createTag(name: "Work", colorIndex: 0))
+        let x = try #require(b.store.add(.text("x"), source: safari, concealed: false))
+        b.store.setTag(itemID: x.id, tagID: work.id)
+        b.round()
+        a.round()
+        clock.advance(60)
+        a.store.renameTag(id: work.id, name: "Office")
+        let onA = try #require(a.store.items.first)
+        a.store.setTag(itemID: onA.id, tagID: nil)
+        for _ in 0..<3 {
+            clock.advance(30)
+            a.round()
+            b.round()
+        }
+        for mac in [a, b] {
+            #expect(mac.store.tags.map(\.name) == ["Office"])
+            #expect(mac.store.items.map(\.text) == ["x"])
+            #expect(mac.store.items.allSatisfy { $0.tagID == nil })
+        }
+        try expectSettled([a, b])
     }
 
     // Turning sync off for a while is not leaving: the Mac's file still lists everything it had. A deletion made

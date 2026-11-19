@@ -124,6 +124,20 @@ public final class SyncService {
         saveSettings()
     }
 
+    /// The latest deletion of an item this Mac knows of: its own, or one in a file of another Mac it last read
+    /// (`HistoryStore.knownDeletion`). Nil when there is none within `Config.syncRetention`.
+    public func latestDeletion(ofItem contentHash: String) -> Date? {
+        let current = now()
+        let remote = cache.values.map(\.state).filter(isLive).flatMap(\.deletions)
+        return (liveDeletions() + remote)
+            .filter { deletion in
+                deletion.kind == .item && deletion.key == contentHash
+                    && current.timeIntervalSince(deletion.deletedAt) <= Config.syncRetention
+            }
+            .map(\.deletedAt)
+            .max()
+    }
+
     /// One round: read the other Macs, merge into the store, publish this Mac. A file that cannot be read never
     /// counts as empty, so it never deletes local data.
     @discardableResult
