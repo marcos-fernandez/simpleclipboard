@@ -361,10 +361,13 @@ public final class SyncService {
         }
         try fileManager.createDirectory(at: devicesDirectory, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: imagesDirectory, withIntermediateDirectories: true)
+        let listedBefore = Set(lastPublished?.state.items.compactMap(\.imageFileName) ?? [])
         for name in Set(snapshot.items.compactMap(\.imageFileName)) where Self.isPlainFileName(name) {
             let shared = imagesDirectory.appendingPathComponent(name)
             if !fileManager.fileExists(atPath: shared.path) {
                 try copyImage(from: localImagesDirectory.appendingPathComponent(name), to: shared)
+            } else if !listedBefore.contains(name) {
+                restampIfOld(shared)
             }
         }
         try JSONEncoder().encode(state).write(to: file, options: .atomic)
@@ -387,6 +390,19 @@ public final class SyncService {
         } catch {
             try? fileManager.removeItem(at: temporary)
             throw error
+        }
+    }
+
+    /// An image this Mac starts listing again (copied again after it was deleted everywhere, or listed for the first
+    /// time since launch) may be a PNG left in Sync/images/ long ago: write-once keeps its old date, and another Mac
+    /// still holding this Mac's previous file would take it for unused and past the grace and delete it. Only its
+    /// date is renewed, never its content, and only when less than half the grace is left: that half is far longer
+    /// than the new file takes to reach the other Macs, and an image in steady use is not touched again.
+    private func restampIfOld(_ shared: URL) {
+        let current = now()
+        let modified = (try? fileManager.attributesOfItem(atPath: shared.path))?[.modificationDate] as? Date ?? current
+        if current.timeIntervalSince(modified) > Config.syncImageGrace / 2 {
+            try? fileManager.setAttributes([.modificationDate: current], ofItemAtPath: shared.path)
         }
     }
 

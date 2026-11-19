@@ -166,6 +166,25 @@ struct SyncServiceTests {
         #expect(try Data(contentsOf: shared) == Data([9]))
     }
 
+    // An image deleted everywhere can stay in Sync/images for a while. When a Mac copies it again, the PNG is not
+    // rewritten, so it keeps its old date; another Mac that still holds this Mac's previous file would take it for
+    // unused and past the grace, delete it, and the item would be missing there.
+    @Test func anImageUsedAgainGetsTheGracePeriodAgain() throws {
+        let a = try makeMac("A")
+        a.round()
+        let file = try publishedFile()
+        let previous = try Data(contentsOf: file)
+        clock.advance(1)
+        let item = try #require(a.store.add(.image(Data([1, 2, 3])), source: safari, concealed: false))
+        let shared = syncFolder.appendingPathComponent("images/\(try #require(item.imageFileName))")
+        try Data([1, 2, 3]).write(to: shared)
+        try fileManager.setAttributes([.modificationDate: clock.current.addingTimeInterval(-Config.syncImageGrace - 60)], ofItemAtPath: shared.path)
+        a.round()
+        try previous.write(to: file)
+        try makeMac("B").round()
+        #expect(fileManager.fileExists(atPath: shared.path))
+    }
+
     @Test func unusedImagesAreRemovedOnlyAfterTheGracePeriod() throws {
         let a = try makeMac("A")
         a.round()
