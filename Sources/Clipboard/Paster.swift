@@ -10,10 +10,12 @@ enum Paster {
 
     /// Puts the item on the pasteboard, returns focus to `target` and sends ⌘V.
     /// Without Accessibility permission it only copies.
-    static func paste(_ item: ClipItem, imageData: Data?, into target: NSRunningApplication?) {
+    /// Returns whether the item was put on the pasteboard, so the caller does not treat a failed paste as a use.
+    @discardableResult
+    static func paste(_ item: ClipItem, imageData: Data?, into target: NSRunningApplication?) -> Bool {
         if item.kind == .image, imageData == nil {
             logger.error("Image file missing for selected item; nothing pasted")
-            return
+            return false
         }
         write(item, imageData: imageData)
         if item.isConcealed {
@@ -22,12 +24,13 @@ enum Paster {
         target?.activate()
         guard AXIsProcessTrusted() else {
             logger.info("No Accessibility permission; item copied but not pasted")
-            return
+            return true
         }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(300))
             sendCommandV()
         }
+        return true
     }
 
     private static func write(_ item: ClipItem, imageData: Data?) {
