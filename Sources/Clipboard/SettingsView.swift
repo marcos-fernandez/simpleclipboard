@@ -32,7 +32,7 @@ struct SettingsView: View {
                     isOn: Binding(get: { state.opensAtLogin }, set: actions.setOpensAtLogin)
                 )
             }
-            Section("When an Item Is Picked") {
+            Section("Paste Items") {
                 VStack(alignment: .leading, spacing: 10) {
                     pickOption(
                         .pasteDirectly,
