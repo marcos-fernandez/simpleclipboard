@@ -31,8 +31,10 @@ final class PanelState {
     var scope: HistoryStore.Scope = .history
 
     /// Falls back to the history tab if the active tag was deleted.
+    /// Expired items are left out: the store only purges them every 30 s.
     func results(in store: HistoryStore) -> [ClipItem] {
-        store.search(query, in: effectiveScope(in: store))
+        let now = Date()
+        return store.search(query, in: effectiveScope(in: store)).filter { !$0.isExpired(at: now) }
     }
 
     func scopes(in store: HistoryStore) -> [HistoryStore.Scope] {
@@ -215,6 +217,10 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
 
     private func pick(_ item: ClipItem) {
+        // The card may have expired while the panel was open, without a re-render to hide it.
+        guard !item.isExpired(at: Date()) else {
+            return
+        }
         let target = previousApp
         hide()
         onPick(item, target)
