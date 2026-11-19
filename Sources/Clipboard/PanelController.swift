@@ -187,6 +187,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         state.selectedID = nil
         state.scope = .history
         state.overlay = nil
+        ThumbnailCache.forgetMisses()
 
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main

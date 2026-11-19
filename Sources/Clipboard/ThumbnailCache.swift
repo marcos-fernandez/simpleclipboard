@@ -15,9 +15,16 @@ enum ThumbnailCache {
         cache.countLimit = 50
         return cache
     }()
+    /// Hashes whose file was missing or unreadable, so body passes do not hit the disk again for them.
+    private static var misses: Set<String> = []
+
+    /// Called when the panel opens: a missing file may since have arrived (a re-copy, or sync).
+    static func forgetMisses() {
+        misses.removeAll()
+    }
 
     static func image(for item: ClipItem, store: HistoryStore) -> NSImage? {
-        guard !item.isConcealed else {
+        guard !item.isConcealed, !misses.contains(item.contentHash) else {
             return nil
         }
         let key = item.contentHash as NSString
@@ -25,6 +32,7 @@ enum ThumbnailCache {
             return cached
         }
         guard let image = store.imageData(for: item).flatMap(thumbnail(from:)) else {
+            misses.insert(item.contentHash)
             return nil
         }
         cache.setObject(image, forKey: key)
