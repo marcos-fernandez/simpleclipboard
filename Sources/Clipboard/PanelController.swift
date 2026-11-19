@@ -382,6 +382,17 @@ final class PanelController: NSObject, NSWindowDelegate {
         default:
             return false
         }
-        return NSApp.sendAction(action, to: nil, from: nil)
+        let pasteboard = NSPasteboard.general
+        let changeCount = pasteboard.changeCount
+        let handled = NSApp.sendAction(action, to: nil, from: nil)
+        // Text copied or cut in the panel is not a new clip: mark it as ours, as Paster does, so the monitor skips
+        // it. Only when something was written, or another app's pending copy would be marked and lost.
+        if [#selector(NSText.copy(_:)), #selector(NSText.cut(_:))].contains(action),
+           pasteboard.changeCount != changeCount {
+            let marker = NSPasteboard.PasteboardType(Config.ownMarkerType)
+            pasteboard.addTypes([marker], owner: nil)
+            pasteboard.setData(Data(), forType: marker)
+        }
+        return handled
     }
 }
