@@ -220,6 +220,23 @@ struct FilePersistenceTests {
         #expect(relaunched.imageData(for: image) == png)
     }
 
+    @Test func dataIsReportedLostOnlyWhenADamagedFileCouldNotBeRecovered() throws {
+        // The app pauses the automatic backup on a loss, so the backup keeps what the damaged file held; a
+        // recovered copy is no loss, and pausing then would only leave the backup out of date.
+        let historyURL = directory.appendingPathComponent("history.json")
+        FilePersistence(directory: directory).save([makeItem("one")])
+        try Data("not json".utf8).write(to: historyURL)
+        let recovered = FilePersistence(directory: directory)
+        _ = recovered.load()
+        #expect(!recovered.dataWasLost)
+
+        try Data("not json".utf8).write(to: historyURL)
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("history.json.prev"))
+        let lost = FilePersistence(directory: directory)
+        _ = lost.load()
+        #expect(lost.dataWasLost)
+    }
+
     @Test func aRemovedItemDoesNotStayInTheCopy() throws {
         // A deleted item, or a value that became concealed, must be gone from disk at once, and
         // must not come back when the copy is recovered.

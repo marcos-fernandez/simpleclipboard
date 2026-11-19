@@ -41,6 +41,12 @@ public final class FilePersistence: HistoryPersistence {
         loadArray(from: tagsURL, movingCorruptTo: tagsBackupURL)
     }
 
+    /// True when a file found damaged at its last load could not be recovered: what the store shows is not all
+    /// the user had.
+    public var dataWasLost: Bool {
+        !unrecovered.isEmpty
+    }
+
     public var tagsWereLost: Bool {
         unrecovered.contains(tagsURL)
     }

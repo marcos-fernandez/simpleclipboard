@@ -53,7 +53,9 @@ automatic every hour when something changed, or from the menu ("Back Up Now",
 backup: if two Macs back up, each one replaces the other's. "Restore" replaces the
 local history and tags. On a new Mac, the existing backup is restored automatically
 only while that Mac has nothing copied yet; once it does, the menu asks you to choose between
-restoring and making a new backup.
+restoring and making a new backup. The automatic backup also waits for that choice ("Back Up Now" or
+"Restore from iCloud…") whenever the backup in iCloud was not made or restored from this Mac, or a
+damaged local file could not be recovered, so it never replaces the backup with less than it holds.
 
 Sync between Macs: with "Sync Between Macs" turned on in each Mac (same iCloud account), the
 history and the tags stay the same through `iCloud Drive/SimpleClipboard/Sync/`: whatever is

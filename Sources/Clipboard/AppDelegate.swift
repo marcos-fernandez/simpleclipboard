@@ -19,6 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Set once the first-launch decision is done (see `BackupBootstrap`).
     private static let backupBootstrapKey = "backupBootstrapDone"
     private static let backupBootstrapLocalWasEmptyKey = "backupBootstrapLocalWasEmpty"
+    /// Set at launch when local data was found damaged and not recovered (`FilePersistence.dataWasLost`); kept across
+    /// relaunches, where the data looks fine again, until a backup or restore succeeds.
+    private static let localDataLostKey = "localDataLost"
 
     private var backup: BackupService!
     private var backupTimer: Timer?
@@ -82,7 +85,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             Self.logger.error("Cannot recover an interrupted restore: \(error.localizedDescription, privacy: .public)")
         }
-        store = HistoryStore(persistence: FilePersistence(directory: directory))
+        let persistence = FilePersistence(directory: directory)
+        store = HistoryStore(persistence: persistence)
+        if persistence.dataWasLost {
+            UserDefaults.standard.set(true, forKey: Self.localDataLostKey)
+        }
         restoreOnFirstLaunchIfNeeded()
         // After the first-launch restore: a new Mac must not publish what that restore replaced as deletions.
         sync = SyncService(localDirectory: directory, iCloudDriveRoot: iCloudDriveRoot)
@@ -316,6 +323,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 store.reloadFromDisk(markingChanges: false)
                 UserDefaults.standard.set(Date(), forKey: Self.lastBackupKey)
                 UserDefaults.standard.set(true, forKey: Self.backupBootstrapKey)
+                UserDefaults.standard.removeObject(forKey: Self.localDataLostKey)
             } catch {
                 Self.logger.error("First-launch restore failed, will retry: \(error.localizedDescription, privacy: .public)")
             }
@@ -345,10 +353,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
     }
 
+    /// nil when the automatic backup may replace the backup in iCloud.
+    private var automaticBackupBlock: AutomaticBackupBlock? {
+        BackupBootstrap.automaticBackupBlock(
+            hasBackup: backup.hasBackup,
+            hasOwnBackup: lastBackupDate != nil,
+            localDataWasLost: UserDefaults.standard.bool(forKey: Self.localDataLostKey)
+        )
+    }
+
     private func backUpIfChanged() {
         restoreOnFirstLaunchIfNeeded()
         guard isBackupBootstrapDone,
               backup.isAvailable,
+              automaticBackupBlock == nil,
               backup.hasChanges(since: lastBackupDate) else {
             return
         }
@@ -360,6 +378,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         do {
             try backup.backUp()
             UserDefaults.standard.set(Date(), forKey: Self.lastBackupKey)
+            // An automatic backup only runs when nothing it replaces is at risk; a manual one is the user's choice.
+            UserDefaults.standard.removeObject(forKey: Self.localDataLostKey)
             return true
         } catch {
             Self.logger.error("Backup failed: \(error.localizedDescription, privacy: .public)")
@@ -371,12 +391,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func backUpNow() {
-        // A backup this Mac did not make (or one the first-launch decision has not settled) is
-        // only replaced after the user confirms it.
-        if backup.hasBackup, lastBackupDate == nil || !isBackupBootstrapDone {
+        // A backup this Mac did not make (or one the first-launch decision has not settled), or one that may hold
+        // what a damaged local file lost, is only replaced after the user confirms it.
+        let block = automaticBackupBlock
+        if backup.hasBackup, block != nil || !isBackupBootstrapDone {
             let alert = NSAlert()
             alert.messageText = "Replace the iCloud backup?"
-            alert.informativeText = "iCloud Drive already holds a backup that was not made from this Mac. It will be replaced with this Mac's data."
+            alert.informativeText = block == .localDataLost
+                ? "This Mac's history or tags were found damaged and may be missing items the backup still has. It will be replaced with this Mac's data."
+                : "iCloud Drive already holds a backup that was not made from this Mac. It will be replaced with this Mac's data."
             alert.addButton(withTitle: "Replace")
             alert.addButton(withTitle: "Cancel")
             NSApp.activate()
@@ -407,6 +430,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 store.reloadFromDisk(markingChanges: true)
                 UserDefaults.standard.set(Date(), forKey: Self.lastBackupKey)
                 UserDefaults.standard.set(true, forKey: Self.backupBootstrapKey)
+                UserDefaults.standard.removeObject(forKey: Self.localDataLostKey)
             } catch {
                 Self.logger.error("Restore failed: \(error.localizedDescription, privacy: .public)")
                 showError("Could not restore the backup", error: error)
@@ -466,8 +490,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             && backupBootstrapDecision(
                 localWasEmptyAtFirstCheck: UserDefaults.standard.object(forKey: Self.backupBootstrapLocalWasEmptyKey) as? Bool
             ) == .awaitUser
-        guard !isAwaitingUser else {
+        let block = automaticBackupBlock
+        guard !isAwaitingUser, block != .notOwnBackup else {
             backupInfoItem.title = "iCloud backup not restored: restore it or make a new backup"
+            return
+        }
+        guard block != .localDataLost else {
+            backupInfoItem.title = "Local data was damaged: restore the backup or make a new one"
             return
         }
         backupInfoItem.title = lastBackupDate

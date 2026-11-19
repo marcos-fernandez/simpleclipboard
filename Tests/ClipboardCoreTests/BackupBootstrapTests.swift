@@ -67,4 +67,36 @@ struct BackupBootstrapTests {
             hasOwnBackup: false
         ) == .awaitUser)
     }
+
+    // MARK: automatic backup
+
+    @Test(arguments: [true, false])
+    func theFirstBackupIsMadeAutomatically(localDataWasLost: Bool) {
+        // With no backup in iCloud there is nothing to lose, and the user expects one to appear.
+        #expect(BackupBootstrap.automaticBackupBlock(
+            hasBackup: false, hasOwnBackup: false, localDataWasLost: localDataWasLost
+        ) == nil)
+    }
+
+    @Test func aBackupThisMacMadeOrRestoredIsUpdatedAutomatically() {
+        #expect(BackupBootstrap.automaticBackupBlock(
+            hasBackup: true, hasOwnBackup: true, localDataWasLost: false
+        ) == nil)
+    }
+
+    @Test func aBackupThisMacNeverMadeNorRestoredIsNotReplacedAutomatically() {
+        // A new Mac where iCloud Drive listed the backup folder only after the first-launch decision: an hour
+        // later its few items would replace the other Mac's whole history.
+        #expect(BackupBootstrap.automaticBackupBlock(
+            hasBackup: true, hasOwnBackup: false, localDataWasLost: false
+        ) == .notOwnBackup)
+    }
+
+    @Test func afterLocalDataWasLostTheBackupIsNotReplacedAutomatically() {
+        // The backup may be the only good copy of what a damaged file held: the hourly backup would replace it
+        // with the near-empty history this Mac started again with.
+        #expect(BackupBootstrap.automaticBackupBlock(
+            hasBackup: true, hasOwnBackup: true, localDataWasLost: true
+        ) == .localDataLost)
+    }
 }
