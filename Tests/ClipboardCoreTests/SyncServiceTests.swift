@@ -489,8 +489,9 @@ struct SyncServiceTests {
         #expect(b.store.items.allSatisfy { $0.tagID == workA.id })
     }
 
-    // A corrupt tags.json on one Mac leaves its items with a tag that no longer exists. That must not spread as an
-    // "untag" to the other Macs: it is not something the user did, and the tag comes back from them.
+    // A corrupt tags.json on one Mac leaves its items pointing to a tag it no longer has; the store keeps them tagged
+    // under a stand-in. Neither an "untag" nor the stand-in's name may spread to the other Macs: it is not something
+    // the user did, and the real tag comes back from them.
     @Test func aCorruptTagsFileOnOneMacDoesNotUntagItsItemsOnTheOthers() throws {
         let a = try makeMac("A")
         let b = try makeMac("B")
@@ -505,7 +506,8 @@ struct SyncServiceTests {
         clock.advance(60)
         let relaunched = HistoryStore(persistence: FilePersistence(directory: a.directory), now: { [clock] in clock.current })
         relaunched.deletionRecorder = { [sync = a.sync] in sync.record($0) }
-        #expect(relaunched.items.first?.tagID == nil)
+        #expect(relaunched.items.first?.tagID == work.id)
+        #expect(relaunched.tags.map(\.name) != ["Work"])
 
         let aAfterRelaunch = Mac(directory: a.directory, store: relaunched, sync: a.sync)
         aAfterRelaunch.round()
@@ -515,6 +517,8 @@ struct SyncServiceTests {
         #expect(b.store.tags.map(\.id) == [work.id])
         #expect(relaunched.items.first?.tagID == work.id)
         #expect(relaunched.tags.map(\.id) == [work.id])
+        #expect(relaunched.tags.map(\.name) == ["Work"])
+        #expect(b.store.tags.map(\.name) == ["Work"])
     }
 
     // Probe P3: both Macs enable sync before either can see the other's file, so neither adopts the other's tag by
