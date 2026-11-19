@@ -73,9 +73,19 @@ public final class FilePersistence: HistoryPersistence {
         guard !unsafeToSave.contains(historyURL) else {
             return
         }
+        // A linked images folder points somewhere else (a restore may bring one): nothing there is ours.
+        let imagesType = (try? fileManager.attributesOfItem(atPath: imagesDirectory.path))?[.type] as? FileAttributeType
+        guard imagesType == .typeDirectory else {
+            Self.logger.error("Not deleting unused images: the images folder is not a plain folder")
+            return
+        }
         let names = (try? fileManager.contentsOfDirectory(atPath: imagesDirectory.path)) ?? []
         for name in names where !keep.contains(name) {
-            try? fileManager.removeItem(at: imagesDirectory.appendingPathComponent(name))
+            let url = imagesDirectory.appendingPathComponent(name)
+            // Only ever a file the app wrote: a folder or a link inside is not an image.
+            if isRegularFile(url) {
+                try? fileManager.removeItem(at: url)
+            }
         }
     }
 

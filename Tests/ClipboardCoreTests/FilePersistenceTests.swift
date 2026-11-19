@@ -291,6 +291,38 @@ struct FilePersistenceTests {
         #expect(persistence.readImage(named: "drop.png") == nil)
     }
 
+    @Test func unusedImagesAreNeverDeletedThroughALinkedImagesFolder() throws {
+        // An images folder that is a link (e.g. brought in by a restore) points somewhere else, like the user's
+        // projects: every save would delete whatever is there that the history does not name.
+        let elsewhere = directory.appendingPathComponent("elsewhere", isDirectory: true)
+        try FileManager.default.createDirectory(at: elsewhere.appendingPathComponent("project"), withIntermediateDirectories: true)
+        try Data([1]).write(to: elsewhere.appendingPathComponent("notes.txt"))
+        let store = directory.appendingPathComponent("store", isDirectory: true)
+        let persistence = FilePersistence(directory: store)
+        try FileManager.default.removeItem(at: store.appendingPathComponent("images"))
+        try FileManager.default.createSymbolicLink(at: store.appendingPathComponent("images"), withDestinationURL: elsewhere)
+
+        persistence.deleteImages(notIn: [])
+
+        #expect(FileManager.default.fileExists(atPath: elsewhere.appendingPathComponent("notes.txt").path))
+        #expect(FileManager.default.fileExists(atPath: elsewhere.appendingPathComponent("project").path))
+    }
+
+    @Test func onlyImageFilesAreDeleted() throws {
+        // The app only ever writes plain files there; a folder or a link inside is not ours to delete,
+        // and removing a folder would remove everything in it.
+        let persistence = FilePersistence(directory: directory)
+        let images = directory.appendingPathComponent("images", isDirectory: true)
+        try FileManager.default.createDirectory(at: images.appendingPathComponent("folder"), withIntermediateDirectories: true)
+        try Data([1]).write(to: images.appendingPathComponent("folder/kept.txt"))
+        try persistence.writeImage(Data([2]), named: "unused.png")
+
+        persistence.deleteImages(notIn: [])
+
+        #expect(FileManager.default.fileExists(atPath: images.appendingPathComponent("folder/kept.txt").path))
+        #expect(persistence.readImage(named: "unused.png") == nil)
+    }
+
     @Test(arguments: ["../outside.png", "a/b.png", "..", ".", ""])
     func anImageNameThatIsNotAPlainFileNameIsRefused(name: String) throws {
         // Names come from history.json, which may come from a backup: a path would read or write files outside
