@@ -67,5 +67,6 @@ are merged into one, even if you created them that way on purpose. The app is in
 
 It used to be called Clipboard: on the first launch of SimpleClipboard,
 `~/Library/Application Support/Clipboard/` and the `Clipboard` folder in iCloud Drive are moved
-to their new names automatically, and the backup state is kept. The Accessibility
+to their new names automatically, and the backup state is kept. Only folders that hold the old app's data
+are moved (`history.json`; a `Backup` or `Sync` folder): another `Clipboard` folder is left alone. The Accessibility
 permission and the login item have to be granted again.

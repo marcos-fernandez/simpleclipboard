@@ -21,7 +21,7 @@ struct LegacyMigrationTests {
         try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
         try Data("history".utf8).write(to: legacy.appendingPathComponent("history.json"))
 
-        #expect(try LegacyMigration.moveDirectory(from: legacy, to: current))
+        #expect(try LegacyMigration.moveDirectory(from: legacy, to: current, recognisedBy: ["history.json"]))
 
         #expect(!FileManager.default.fileExists(atPath: legacy.path))
         let moved = try Data(contentsOf: current.appendingPathComponent("history.json"))
@@ -34,10 +34,11 @@ struct LegacyMigrationTests {
         let legacy = root.appendingPathComponent("Clipboard", isDirectory: true)
         let current = root.appendingPathComponent("SimpleClipboard", isDirectory: true)
         try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: legacy.appendingPathComponent("history.json"))
         try FileManager.default.createDirectory(at: current, withIntermediateDirectories: true)
         try Data("new".utf8).write(to: current.appendingPathComponent("history.json"))
 
-        #expect(try !LegacyMigration.moveDirectory(from: legacy, to: current))
+        #expect(try !LegacyMigration.moveDirectory(from: legacy, to: current, recognisedBy: ["history.json"]))
 
         let kept = try Data(contentsOf: current.appendingPathComponent("history.json"))
         #expect(String(decoding: kept, as: UTF8.self) == "new")
@@ -47,8 +48,35 @@ struct LegacyMigrationTests {
     @Test func nothingHappensWithoutALegacyDirectory() throws {
         let current = root.appendingPathComponent("SimpleClipboard", isDirectory: true)
 
-        #expect(try !LegacyMigration.moveDirectory(from: root.appendingPathComponent("Clipboard"), to: current))
+        #expect(try !LegacyMigration.moveDirectory(
+            from: root.appendingPathComponent("Clipboard"), to: current, recognisedBy: ["history.json"]
+        ))
         #expect(!FileManager.default.fileExists(atPath: current.path))
+    }
+
+    @Test func aClipboardFolderThatIsNotTheOldAppsIsLeftAlone() throws {
+        // "Clipboard" is a common name: on a fresh install, another app's folder or the user's own would be taken
+        // over, and the images in its images/ deleted by the first save.
+        let legacy = root.appendingPathComponent("Clipboard", isDirectory: true)
+        let current = root.appendingPathComponent("SimpleClipboard", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacy.appendingPathComponent("images"), withIntermediateDirectories: true)
+        try Data("theirs".utf8).write(to: legacy.appendingPathComponent("images/photo.png"))
+
+        #expect(try !LegacyMigration.moveDirectory(from: legacy, to: current, recognisedBy: ["history.json"]))
+
+        #expect(FileManager.default.fileExists(atPath: legacy.appendingPathComponent("images/photo.png").path))
+        #expect(!FileManager.default.fileExists(atPath: current.path))
+    }
+
+    @Test(arguments: ["Backup", "Sync"])
+    func theOldICloudFolderIsRecognisedByAnyOfItsFolders(name: String) throws {
+        // The old app's iCloud Drive folder holds only a backup, only sync data, or both.
+        let legacy = root.appendingPathComponent("Clipboard", isDirectory: true)
+        let current = root.appendingPathComponent("SimpleClipboard", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacy.appendingPathComponent(name), withIntermediateDirectories: true)
+
+        #expect(try LegacyMigration.moveDirectory(from: legacy, to: current, recognisedBy: ["Backup", "Sync"]))
+        #expect(FileManager.default.fileExists(atPath: current.appendingPathComponent(name).path))
     }
 
     // MARK: defaults

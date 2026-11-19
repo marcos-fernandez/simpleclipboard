@@ -47,11 +47,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// backup state. The login-item flag is not copied, so the renamed app registers itself again.
     private func migrateFromLegacyName(legacyDirectory: URL, directory: URL, iCloudDriveRoot: URL) {
         do {
-            try LegacyMigration.moveDirectory(from: legacyDirectory, to: directory)
+            try LegacyMigration.moveDirectory(from: legacyDirectory, to: directory, recognisedBy: ["history.json"])
             if FileManager.default.fileExists(atPath: iCloudDriveRoot.path) {
                 try LegacyMigration.moveDirectory(
                     from: iCloudDriveRoot.appendingPathComponent(Config.legacyAppName, isDirectory: true),
-                    to: iCloudDriveRoot.appendingPathComponent(Config.appName, isDirectory: true)
+                    to: iCloudDriveRoot.appendingPathComponent(Config.appName, isDirectory: true),
+                    recognisedBy: ["Backup", "Sync"]
                 )
             }
         } catch {
