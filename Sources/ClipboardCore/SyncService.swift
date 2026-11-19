@@ -210,23 +210,33 @@ public final class SyncService {
 
     /// Files of other Macs. One not downloaded yet is requested and its last decoded version used meanwhile; a
     /// corrupt one or one with a newer format is skipped this round.
+    /// A Mac silent for longer than `Config.syncRetention` is taken for gone, as in `SyncMerge`: judged by
+    /// `publishedAt` when its file reads, by the file's modification date when it does not. Its file is then left out
+    /// (it neither blocks joining, nor keeps images, nor reports a newer version) but never deleted: deleting another
+    /// Mac's file cannot be undone, and that Mac may still come back, after which it publishes again and counts again.
     private func readRemoteStates(excluding deviceID: String) -> RemoteRead {
         var read = RemoteRead()
         let names = (try? fileManager.contentsOfDirectory(atPath: devicesDirectory.path)) ?? []
         for name in names where name.hasSuffix(".json") && !name.hasPrefix(".") && name != "\(deviceID).json" {
             let file = devicesDirectory.appendingPathComponent(name)
             let remoteID = String(name.dropLast(".json".count))
+            let modified = (try? fileManager.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date ?? .distantPast
+            let isGone = now().timeIntervalSince(modified) > Config.syncRetention
             guard isDownloaded(file) else {
+                guard !isGone else {
+                    continue
+                }
                 try? fileManager.startDownloadingUbiquitousItem(at: file)
                 read.allRead = false
-                if let cached = cache[remoteID] {
+                if let cached = cache[remoteID], isLive(cached.state) {
                     read.states.append(cached.state)
                 }
                 continue
             }
-            let modified = (try? fileManager.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date ?? .distantPast
             if let cached = cache[remoteID], cached.modified == modified {
-                read.states.append(cached.state)
+                if isLive(cached.state) {
+                    read.states.append(cached.state)
+                }
                 continue
             }
             do {
@@ -241,24 +251,37 @@ public final class SyncService {
                           version > SyncState.currentVersion else {
                         throw error
                     }
-                    read.newerVersion = true
-                    read.allRead = false
+                    if !isGone {
+                        read.newerVersion = true
+                        read.allRead = false
+                    }
                     continue
                 }
                 guard state.version <= SyncState.currentVersion else {
-                    read.newerVersion = true
-                    read.allRead = false
+                    if isLive(state) {
+                        read.newerVersion = true
+                        read.allRead = false
+                    }
                     continue
                 }
                 cache[remoteID] = (modified, state)
-                read.states.append(state)
+                if isLive(state) {
+                    read.states.append(state)
+                }
             } catch {
+                guard !isGone else {
+                    continue
+                }
                 let code = error as NSError
                 Self.logger.error("Skipping unreadable sync file \(name, privacy: .public): \(code.domain, privacy: .public) \(code.code, privacy: .public)")
                 read.allRead = false
             }
         }
         return read
+    }
+
+    private func isLive(_ state: SyncState) -> Bool {
+        now().timeIntervalSince(state.publishedAt) <= Config.syncRetention
     }
 
     /// A text item needs nothing. An image item enters only once its PNG is in the local images folder: copied from

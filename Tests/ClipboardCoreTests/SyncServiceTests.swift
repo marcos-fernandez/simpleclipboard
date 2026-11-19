@@ -193,6 +193,55 @@ struct SyncServiceTests {
         #expect(fileManager.fileExists(atPath: old.path))
     }
 
+    // A Mac silent for longer than the retention is taken for gone. Its file, readable or not, is left in place (it
+    // may come back, and deleting another Mac's file cannot be undone) but must not block for ever: no new Mac could
+    // join, images would never be cleaned up and the menu would report a newer version that is long gone.
+    @Test func aFileUntouchedForLongerThanTheRetentionNoLongerBlocks() throws {
+        let a = try makeMac("A")
+        a.round()
+        let devices = syncFolder.appendingPathComponent("devices", isDirectory: true)
+        let corrupt = devices.appendingPathComponent("X.json")
+        let newer = devices.appendingPathComponent("Y.json")
+        try Data("not json".utf8).write(to: corrupt)
+        try Data(#"{"version": 99}"#.utf8).write(to: newer)
+        let longAgo = clock.current.addingTimeInterval(-Config.syncRetention - 60)
+        for file in [corrupt, newer] {
+            try fileManager.setAttributes([.modificationDate: longAgo], ofItemAtPath: file.path)
+        }
+        let old = syncFolder.appendingPathComponent("images/old.png")
+        try Data([1]).write(to: old)
+        try fileManager.setAttributes([.modificationDate: clock.current.addingTimeInterval(-Config.syncImageGrace - 60)], ofItemAtPath: old.path)
+
+        #expect(try makeMac("B").round() == .synced(clock.current))
+        #expect(a.round() == .synced(clock.current))
+        #expect(!fileManager.fileExists(atPath: old.path))
+        #expect(fileManager.fileExists(atPath: corrupt.path))
+        #expect(fileManager.fileExists(atPath: newer.path))
+    }
+
+    // The merge already ignores a Mac silent for longer than the retention; its images must not stay in iCloud
+    // Drive for ever just because its file is still there.
+    @Test func aSilentMacNoLongerKeepsItsImages() throws {
+        let a = try makeMac("A")
+        a.round()
+        let old = syncFolder.appendingPathComponent("images/old.png")
+        try Data([1]).write(to: old)
+        try fileManager.setAttributes([.modificationDate: clock.current.addingTimeInterval(-Config.syncImageGrace - 60)], ofItemAtPath: old.path)
+        let silent = SyncState(
+            deviceID: "X", publishedAt: clock.current.addingTimeInterval(-Config.syncRetention - 60),
+            items: [
+                SyncItem(
+                    contentHash: "old", kind: .image, text: nil, imageFileName: "old.png", createdAt: clock.current,
+                    sourceAppBundleID: nil, sourceAppName: nil, tagID: nil, tagChangedAt: SyncState.unstamped
+                ),
+            ],
+            tags: [], deletions: []
+        )
+        try JSONEncoder().encode(silent).write(to: syncFolder.appendingPathComponent("devices/X.json"))
+        a.round()
+        #expect(!fileManager.fileExists(atPath: old.path))
+    }
+
     @Test func anImageItemWaitsForItsImage() throws {
         let a = try makeMac("A")
         let b = try makeMac("B")
