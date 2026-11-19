@@ -56,15 +56,29 @@ enum Paster {
         }
     }
 
+    /// The pasteboard's change count right after we put a concealed value on it; nil once it is cleared.
+    private static var concealedChangeCount: Int?
+
     /// Clears a pasted password after a while, unless something else was copied meanwhile.
     private static func clearPasteboardLater() {
         let changeCount = NSPasteboard.general.changeCount
+        concealedChangeCount = changeCount
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(Config.concealedPasteboardLifetime))
-            if NSPasteboard.general.changeCount == changeCount {
-                NSPasteboard.general.clearContents()
+            if concealedChangeCount == changeCount {
+                clearConcealedValue()
             }
         }
+    }
+
+    /// Clears the pasteboard now if it still holds the concealed value we put there. Called at quit: the timer of
+    /// `clearPasteboardLater` dies with the app and would leave the password on the system pasteboard.
+    /// Not reached when the app is killed (SIGKILL, or SIGTERM without AppKit's termination).
+    static func clearConcealedValue() {
+        if let changeCount = concealedChangeCount, NSPasteboard.general.changeCount == changeCount {
+            NSPasteboard.general.clearContents()
+        }
+        concealedChangeCount = nil
     }
 
     /// Simulates a full physical ⌘V (⌘ down, V down, V up, ⌘ up) on the session tap.

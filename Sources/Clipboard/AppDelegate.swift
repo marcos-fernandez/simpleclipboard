@@ -139,6 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         requestAccessibilityIfNeeded()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        Paster.clearConcealedValue()
+    }
+
     private func setUpStatusItem(hotkeyRegistered: Bool) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: Config.appName)
