@@ -72,14 +72,16 @@ struct HistoryView: View {
     }
 
     private func cards(_ results: [ClipItem], selectedIndex: Int) -> some View {
-        ScrollViewReader { proxy in
+        // By id, so no indexed copy of the whole list is built on every body pass.
+        let selectedCardID = results[selectedIndex].id
+        return ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 12) {
-                    ForEach(Array(results.enumerated()), id: \.element.id) { index, item in
+                    ForEach(results) { item in
                         ClipCardView(
                             item: item,
                             image: ThumbnailCache.image(for: item, store: store),
-                            isSelected: index == selectedIndex,
+                            isSelected: item.id == selectedCardID,
                             tagColor: tagColor(for: item)
                         )
                         .id(item.id)

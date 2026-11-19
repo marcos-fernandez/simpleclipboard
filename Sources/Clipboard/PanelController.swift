@@ -302,7 +302,9 @@ final class PanelController: NSObject, NSWindowDelegate {
         case kVK_Delete where event.modifierFlags.contains(.command):
             if results.indices.contains(index) {
                 store.remove(id: results[index].id)
-                let remaining = state.results(in: store)
+                // The list already in hand minus the removed item, instead of searching again.
+                var remaining = results
+                remaining.remove(at: index)
                 state.selectedID = remaining.isEmpty
                     ? nil
                     : remaining[min(index, remaining.count - 1)].id
