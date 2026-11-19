@@ -108,7 +108,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         self.backupTimer = backupTimer
         let launchBackupTimer = Timer(timeInterval: Config.backupLaunchDelay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.backUpIfChanged()
+                // Only for a Mac that has backed up before: on a new one iCloud Drive may not have listed another
+                // Mac's backup yet, and a first backup this early would replace it unseen.
+                if self?.lastBackupDate != nil {
+                    self?.backUpIfChanged()
+                }
             }
         }
         RunLoop.main.add(launchBackupTimer, forMode: .common)

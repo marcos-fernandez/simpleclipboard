@@ -15,7 +15,7 @@ memory only and disappears after 10 minutes.
 ```bash
 scripts/test.sh                # unit tests (sets the Swift Testing plugin path)
 scripts/build-app.sh           # creates build/SimpleClipboard.app
-pkill -x SimpleClipboard || true
+osascript -e 'quit app "SimpleClipboard"' || true   # a normal quit, so the last changes are written
 ditto build/SimpleClipboard.app /Applications/SimpleClipboard.app
 open /Applications/SimpleClipboard.app
 ```
