@@ -230,13 +230,26 @@ public final class SyncService {
                 continue
             }
             do {
+                // Decoded once: the version alone is read only when the whole file does not decode, since a newer
+                // format usually fails here. A newer file that does decode is still caught by its version.
                 let data = try Data(contentsOf: file)
-                guard try JSONDecoder().decode(VersionOnly.self, from: data).version <= SyncState.currentVersion else {
+                let state: SyncState
+                do {
+                    state = try JSONDecoder().decode(SyncState.self, from: data)
+                } catch {
+                    guard let version = try? JSONDecoder().decode(VersionOnly.self, from: data).version,
+                          version > SyncState.currentVersion else {
+                        throw error
+                    }
                     read.newerVersion = true
                     read.allRead = false
                     continue
                 }
-                let state = try JSONDecoder().decode(SyncState.self, from: data)
+                guard state.version <= SyncState.currentVersion else {
+                    read.newerVersion = true
+                    read.allRead = false
+                    continue
+                }
                 cache[remoteID] = (modified, state)
                 read.states.append(state)
             } catch {

@@ -297,6 +297,26 @@ struct SyncServiceTests {
         #expect(a.store.items.map(\.text) == ["one"])
     }
 
+    // A newer app may only add fields, so its file can decode in full: its version must still keep it out, or this
+    // Mac would merge data it cannot interpret.
+    @Test func aNewerFileThatDecodesIsStillSkipped() throws {
+        let a = try makeMac("A")
+        a.round()
+        let newer = SyncState(
+            version: SyncState.currentVersion + 1, deviceID: "Y", publishedAt: clock.current,
+            items: [
+                SyncItem(
+                    contentHash: "newer", kind: .text, text: "newer", imageFileName: nil, createdAt: clock.current,
+                    sourceAppBundleID: nil, sourceAppName: nil, tagID: nil, tagChangedAt: SyncState.unstamped
+                ),
+            ],
+            tags: [], deletions: []
+        )
+        try JSONEncoder().encode(newer).write(to: syncFolder.appendingPathComponent("devices/Y.json"))
+        #expect(a.round() == .newerVersionElsewhere)
+        #expect(a.store.items.isEmpty)
+    }
+
     @Test func withSyncOffNothingIsWritten() throws {
         let a = try makeMac("A", enabled: false)
         a.store.add(.text("one"), source: safari, concealed: false)
