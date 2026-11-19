@@ -176,9 +176,11 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     func show() {
         let frontApp = NSWorkspace.shared.frontmostApplication
-        if frontApp?.processIdentifier != NSRunningApplication.current.processIdentifier {
-            previousApp = frontApp
-        }
+        // When we are frontmost (e.g. one of our alerts), there is no app to paste into: an app recorded on an
+        // earlier show would receive the paste unseen.
+        previousApp = frontApp?.processIdentifier == NSRunningApplication.current.processIdentifier
+            ? nil
+            : frontApp
         state.query = ""
         state.selectedID = nil
         state.scope = .history

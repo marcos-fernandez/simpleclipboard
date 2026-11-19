@@ -21,7 +21,12 @@ enum Paster {
         if item.isConcealed {
             clearPasteboardLater()
         }
-        target?.activate()
+        // Without a live target, ⌘V would land in whatever is frontmost, possibly one of our own alerts.
+        guard let target, !target.isTerminated else {
+            logger.info("No app to paste into; item copied but not pasted")
+            return true
+        }
+        target.activate()
         guard AXIsProcessTrusted() else {
             logger.info("No Accessibility permission; item copied but not pasted")
             return true
