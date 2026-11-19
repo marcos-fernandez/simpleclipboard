@@ -2,10 +2,41 @@ import ClipboardCore
 import Observation
 import SwiftUI
 
-/// What the settings window shows. `AppDelegate` owns the values and refreshes them.
+/// The panes of the settings window, in the order of the sidebar.
+enum SettingsSection: CaseIterable {
+    case general
+    case keyboardShortcuts
+    case privacy
+
+    var symbolName: String {
+        switch self {
+        case .general:
+            return "gearshape"
+        case .keyboardShortcuts:
+            return "keyboard"
+        case .privacy:
+            return "hand.raised"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .general:
+            return "General"
+        case .keyboardShortcuts:
+            return "Keyboard Shortcuts"
+        case .privacy:
+            return "Privacy"
+        }
+    }
+}
+
+/// What the settings window shows. `AppDelegate` owns the values and refreshes them; the pane on show is the
+/// window's own.
 @MainActor
 @Observable
 final class SettingsState {
+    var section = SettingsSection.general
     var opensAtLogin = false
     var pickAction = PickAction.pasteDirectly
     var isAccessibilityGranted = false
@@ -18,15 +49,115 @@ struct SettingsActions {
     let openAccessibilitySettings: @MainActor () -> Void
 }
 
+/// The system's sidebar material, which SwiftUI only gives to a List.
+private struct SidebarBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
 struct SettingsView: View {
     let state: SettingsState
     let actions: SettingsActions
 
     private static let radioSpacing: CGFloat = 8
+    /// Lines the header up with the boxes of the form.
+    private static let headerInset: CGFloat = 20
+    private static let paneSize = CGSize(width: 490, height: 420)
+    /// The same for every row, so the names line up whatever the width of each symbol.
+    private static let sidebarIconWidth: CGFloat = 22
+    private static let sidebarInset: CGFloat = 10
+    private static let sidebarRowSpacing: CGFloat = 2
+    private static let sidebarTopInset: CGFloat = 20
 
     var body: some View {
+        // Not a NavigationSplitView: its divider can be dragged and its sidebar collapsed whatever widths it is given,
+        // and the sidebar is the only way to change pane.
+        HStack(spacing: 0) {
+            sidebar
+            Divider()
+                .ignoresSafeArea()
+            pane
+        }
+        .frame(height: Self.paneSize.height)
+    }
+
+    /// Drawn here and not a List: as wide as its longest name, whatever the language, where a List cuts the name to
+    /// the width it is given.
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: Self.sidebarRowSpacing) {
+            ForEach(SettingsSection.allCases, id: \.self) { section in
+                sidebarRow(section)
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, Self.sidebarInset)
+        // Some air under the title bar: the rows already start below it and the window's buttons.
+        .padding(.top, Self.sidebarTopInset)
+        .frame(maxHeight: .infinity, alignment: .top)
+        // Up to the top edge, under the title bar.
+        .background(SidebarBackground().ignoresSafeArea())
+    }
+
+    /// The name of the pane on show and, under it, its content.
+    private var pane: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(state.section.title)
+                .font(.title2)
+                .fontWeight(.semibold)
+                .padding(.horizontal, Self.headerInset)
+                .accessibilityAddTraits(.isHeader)
+            switch state.section {
+            case .general:
+                general
+            case .keyboardShortcuts, .privacy:
+                Text("Nothing here yet")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(width: Self.paneSize.width, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private func sidebarRow(_ section: SettingsSection) -> some View {
+        let isSelected = state.section == section
+        let background = isSelected
+            ? Color.accentColor
+            : Color.clear
+        let foreground = isSelected
+            ? Color.white
+            : Color.primary
+        let traits: AccessibilityTraits = isSelected
+            ? .isSelected
+            : []
+        return Button {
+            state.section = section
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: section.symbolName)
+                    .frame(width: Self.sidebarIconWidth)
+                Text(section.title)
+            }
+            // Every row as wide as the widest one.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .foregroundStyle(foreground)
+            .background(background, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(traits)
+    }
+
+    private var general: some View {
         Form {
-            Section("General") {
+            Section {
                 Toggle(
                     "Open at Login",
                     isOn: Binding(get: { state.opensAtLogin }, set: actions.setOpensAtLogin)
@@ -59,10 +190,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        // The window's background shows through (see `SettingsWindowController`).
-        .scrollContentBackground(.hidden)
-        .frame(width: 480)
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// A radio button with its explanation underneath. Drawn here: in a grouped form the system's radio group puts

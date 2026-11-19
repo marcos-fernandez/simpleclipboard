@@ -33,19 +33,19 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         self.onBecomeKey = onBecomeKey
         window = SettingsWindow(
             contentRect: .zero,
-            styleMask: [.titled, .closable],
+            // The sidebar runs under the title bar, as in System Settings.
+            styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: true
         )
         super.init()
 
         window.delegate = self
-        // The app has no Dock icon and no menu bar of its own: the title is what says whose window this is.
-        window.title = Config.appName
         // Kept for the next time it is opened.
         window.isReleasedWhenClosed = false
-        // One standard background for the page and the title bar, so the boxes of the form stand out.
-        window.backgroundColor = .controlBackgroundColor
+        // The app's name is what Mission Control shows; in the window, the pane's name is the header of the view.
+        window.title = Config.appName
+        window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.contentViewController = NSHostingController(
             rootView: SettingsView(state: state, actions: actions)
