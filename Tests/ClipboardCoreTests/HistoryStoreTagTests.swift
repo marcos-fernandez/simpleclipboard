@@ -134,8 +134,8 @@ struct HistoryStoreTagTests {
     }
 
     @Test func orphanTagAfterLosingTagsFileDoesNotPurgeTheItemAtLaunch() {
-        // Review focus 1: a corrupt tags.json leaves orphan tagIDs; the pinned
-        // item must not be dropped by the 30-day rule on the next launch.
+        // Review focus 1: a missing tags.json leaves orphan tagIDs (an unreadable one keeps them, see
+        // below); the pinned item must not be dropped by the 30-day rule on the next launch.
         let pinned = ClipItem(
             createdAt: clock.current, kind: .text, text: "pinned", imageFileName: nil,
             contentHash: "h", source: safari, isConcealed: false, expiresAt: nil, tagID: UUID()

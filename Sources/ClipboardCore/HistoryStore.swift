@@ -372,8 +372,8 @@ public final class HistoryStore {
         return !lostIDs.isEmpty
     }
 
-    /// Items whose tag no longer exists (e.g. after a corrupt tags file) are treated as just copied,
-    /// so they are not purged by the 30-day rule at launch. Their `tagChangedAt` is kept: a missing tag file is not a
+    /// Items whose tag no longer exists (e.g. the tags file is gone; an unreadable one goes to `recreateLostTags`)
+    /// are treated as just copied, so they are not purged by the 30-day rule at launch. Their `tagChangedAt` is kept: a missing tag file is not a
     /// user decision, so it must not win over the other Macs' tagged version, and on a tie the merge ("having a tag
     /// wins") gives the tag back from them.
     @discardableResult

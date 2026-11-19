@@ -79,6 +79,7 @@ struct BackupBootstrapTests {
     }
 
     @Test func aBackupThisMacMadeOrRestoredIsUpdatedAutomatically() {
+        // The hourly backup is what keeps it current; it holds nothing this Mac has not seen.
         #expect(BackupBootstrap.automaticBackupBlock(
             hasBackup: true, hasOwnBackup: true, localDataWasLost: false
         ) == nil)
