@@ -8,11 +8,13 @@ import os
 enum Paster {
     private static let logger = Logger(subsystem: Config.bundleID, category: "Paster")
 
-    /// Puts the item on the pasteboard, returns focus to `target` and sends ⌘V.
+    /// Puts the item on the pasteboard, returns focus to `target` and, when `action` is `pasteDirectly`, sends ⌘V.
     /// Without Accessibility permission it only copies.
     /// Returns whether the item was put on the pasteboard, so the caller does not treat a failed paste as a use.
     @discardableResult
-    static func paste(_ item: ClipItem, imageData: Data?, into target: NSRunningApplication?) -> Bool {
+    static func paste(
+        _ item: ClipItem, imageData: Data?, into target: NSRunningApplication?, action: PickAction
+    ) -> Bool {
         if item.kind == .image, imageData == nil {
             logger.error("Image file missing for selected item; nothing pasted")
             return false
@@ -27,6 +29,9 @@ enum Paster {
             return true
         }
         target.activate()
+        guard action == .pasteDirectly else {
+            return true
+        }
         guard AXIsProcessTrusted() else {
             logger.info("No Accessibility permission; item copied but not pasted")
             return true
