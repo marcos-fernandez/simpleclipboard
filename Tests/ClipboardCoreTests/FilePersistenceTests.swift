@@ -66,6 +66,27 @@ struct FilePersistenceTests {
         #expect(FilePersistence(directory: directory).load().map(\.text) == ["new"])
     }
 
+    @Test func aFileThatFailsToReadIsLeftInPlaceAndNotSavedOver() throws {
+        // A read error (permissions, a passing I/O error) says nothing about the contents: the file
+        // may be perfectly good. Moving it to .bak would replace it with whatever is copied next,
+        // so it stays where it is, saving over it is refused, and the copy of the last save is shown.
+        let historyURL = directory.appendingPathComponent("history.json")
+        let persistence = FilePersistence(directory: directory)
+        persistence.save([makeItem("one")])
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: historyURL.path)
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: historyURL.path)
+
+        let unreadable = FilePersistence(directory: directory)
+        #expect(unreadable.load().map(\.text) == ["one"])
+        #expect(!unreadable.save([makeItem("new")]))
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: historyURL.path)
+
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("history.json.bak").path))
+        #expect(FilePersistence(directory: directory).load().map(\.text) == ["one"])
+    }
+
     @Test func repeatedCorruptionNeverDeletesAnEarlierBackup() throws {
         // The first .bak may be the only copy of the user's history; a later corruption
         // (even within the same second) must be kept next to it, not replace it.

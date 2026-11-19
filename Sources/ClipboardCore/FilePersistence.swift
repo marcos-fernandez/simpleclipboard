@@ -62,9 +62,10 @@ public final class FilePersistence: HistoryPersistence {
         }
     }
 
-    /// A missing file means nothing is stored yet. A file that exists but cannot be read or decoded is moved aside
-    /// (`movingCorruptTo` or a unique sibling, never over an earlier one) so the app starts instead of failing and
-    /// the next save does not overwrite the user's data. The copy of the last save is loaded in its place
+    /// A missing file means nothing is stored yet. A file that exists but cannot be decoded (or is not a regular
+    /// file) is moved aside (`movingCorruptTo` or a unique sibling, never over an earlier one) so the app starts
+    /// instead of failing and the next save does not overwrite the user's data. A regular file that cannot be read
+    /// stays in place and is not saved over. Either way the copy of the last save is loaded in its place
     /// (`keepCopy`), or nothing when there is no such copy.
     private func loadArray<Element: Decodable>(from url: URL, movingCorruptTo backup: URL) -> [Element] {
         guard fileManager.fileExists(atPath: url.path) else {
@@ -72,7 +73,16 @@ public final class FilePersistence: HistoryPersistence {
             return []
         }
         do {
-            let data = try Data(contentsOf: url)
+            let data: Data
+            do {
+                data = try Data(contentsOf: url)
+            } catch where isRegularFile(url) {
+                // A read error says nothing about the contents: the file stays, and is not saved over.
+                let nsError = error as NSError
+                Self.logger.error("Cannot read \(url.lastPathComponent, privacy: .public) (\(nsError.domain, privacy: .public) \(nsError.code, privacy: .public)), leaving it in place")
+                unsafeToSave.insert(url)
+                return recoverCopy(of: url)
+            }
             let elements = try JSONDecoder().decode([Element].self, from: data)
             unsafeToSave.remove(url)
             return elements
@@ -117,6 +127,11 @@ public final class FilePersistence: HistoryPersistence {
         } catch {
             Self.logger.error("Cannot keep a copy of \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Not following a symbolic link: a link is not one of our files.
+    private func isRegularFile(_ url: URL) -> Bool {
+        (try? fileManager.attributesOfItem(atPath: url.path))?[.type] as? FileAttributeType == .typeRegular
     }
 
     private func previousURL(of url: URL) -> URL {
