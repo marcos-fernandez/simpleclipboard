@@ -20,7 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let backupBootstrapKey = "backupBootstrapDone"
     private static let backupBootstrapLocalWasEmptyKey = "backupBootstrapLocalWasEmpty"
     /// Set at launch when local data was found damaged and not recovered (`FilePersistence.dataWasLost`); kept across
-    /// relaunches, where the data looks fine again, until a backup or restore succeeds.
+    /// relaunches, where the data looks fine again, until a manual backup or a restore succeeds.
     private static let localDataLostKey = "localDataLost"
 
     private var backup: BackupService!
@@ -379,8 +379,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         do {
             try backup.backUp()
             UserDefaults.standard.set(Date(), forKey: Self.lastBackupKey)
-            // An automatic backup only runs when nothing it replaces is at risk; a manual one is the user's choice.
-            UserDefaults.standard.removeObject(forKey: Self.localDataLostKey)
+            // Only the user's choice lifts it: an automatic backup that ran because iCloud had not listed the
+            // backup yet must not drop the protection.
+            if manual {
+                UserDefaults.standard.removeObject(forKey: Self.localDataLostKey)
+            }
             return true
         } catch {
             Self.logger.error("Backup failed: \(error.localizedDescription, privacy: .public)")
