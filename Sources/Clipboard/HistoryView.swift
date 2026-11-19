@@ -115,13 +115,17 @@ struct HistoryView: View {
                 }
                 .padding(.horizontal, 4)
             }
-            .onChange(of: state.selectedID) { _, newID in
-                guard let newID else {
-                    return
-                }
+            // The card shown as selected, not `selectedID`: nil (after reopening, a tab switch or a search) and a
+            // removed or expired item fall back to the first card, which must then be scrolled into view too.
+            .onChange(of: selectedCardID) { _, newID in
                 withAnimation {
                     proxy.scrollTo(newID, anchor: .center)
                 }
+            }
+            // The panel keeps its scroll offset while hidden; on every show the selected card must be on screen
+            // even when the selection did not change.
+            .onChange(of: state.focusRequest) {
+                proxy.scrollTo(selectedCardID, anchor: .center)
             }
         }
     }
