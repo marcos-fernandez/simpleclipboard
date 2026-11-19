@@ -47,7 +47,7 @@ public enum BackupBootstrap {
 
     /// Checked before every automatic backup, also after the first-launch decision is done: the backup folder can
     /// show up in iCloud Drive later. nil when it may run. Only the user lifts a block, with "Back Up Now" or
-    /// "Restore from iCloud…" (`hasOwnBackup` becomes true and the loss is cleared). With no backup there is
+    /// "Restore…" (`hasOwnBackup` becomes true and the loss is cleared). With no backup there is
     /// nothing to replace.
     public static func automaticBackupBlock(
         hasBackup: Bool, hasOwnBackup: Bool, localDataWasLost: Bool

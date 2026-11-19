@@ -48,6 +48,9 @@ Code Signing).
 `⇧⌘V` opens the history · `←` `→` navigate · type to search · `Enter` paste ·
 `⌘⌫` delete · `Esc` close · `⌘←` `⌘→` switch tab · `⌘T` tag · right-click a card or a tab for more options.
 
+"Settings…" in the menu-bar menu (`⌘,` while the menu is open): open at login. With the Settings window in front,
+an item picked from the history is only copied.
+
 ## Data
 
 `~/Library/Application Support/SimpleClipboard/` (`history.json`, `tags.json` and `images/`).
@@ -63,19 +66,19 @@ repaired file).
 
 Backup: `~/Library/Mobile Documents/com~apple~CloudDocs/SimpleClipboard/Backup/`,
 automatic every hour when something changed, or from the menu ("Back Up Now",
-"Restore from iCloud…"). Anything copied from 1Password is never included. There is a single
+"Restore…"). Anything copied from 1Password is never included. There is a single
 backup: if two Macs back up, each one replaces the other's. "Restore" replaces the
 local history and tags. On a new Mac, the existing backup is restored automatically
-only while that Mac has nothing copied yet; once it does, the menu asks you to choose between
-restoring and making a new backup. The automatic backup also waits for that choice ("Back Up Now" or
-"Restore from iCloud…") whenever the backup in iCloud was not made or restored from this Mac, or a
+only while that Mac has nothing copied yet; once it does, the menu shows "Backup not restored" until you choose
+between restoring ("Restore…") and making a new backup ("Back Up Now"). The automatic backup also waits for that
+choice whenever the backup in iCloud Drive was not made or restored from this Mac, or a
 damaged local file could not be recovered, so it never replaces the backup with less than it holds.
 
 Sync between Macs: with "Sync Between Macs" turned on in each Mac (same iCloud account), the
 history and the tags stay the same through `iCloud Drive/SimpleClipboard/Sync/`: whatever is
 copied, deleted or tagged on one shows up on the other once iCloud Drive uploads and downloads the files (from
 seconds to a couple of minutes). Anything copied from 1Password never leaves the Mac. A deletion reaches both Macs; to
-undo it, "Restore from iCloud…" brings the backup back on both. When it is first turned on
+undo it, "Restore…" brings the backup back on both. When it is first turned on
 on a Mac, its history is joined with the others' without duplicating anything. Tags with the same name
 are merged into one, even if you created them that way on purpose, and so are two tags when one is renamed to the
 other's name. The app is installed on each Mac by building it there.

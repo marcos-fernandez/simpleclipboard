@@ -31,6 +31,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var backupNowItem: NSMenuItem!
     private var restoreItem: NSMenuItem!
 
+    private static let loginItemRegisteredKey = "loginItemRegistered"
+
+    private let settingsState = SettingsState()
+    private var settings: SettingsWindowController!
+    /// Whether the user was in the settings window before the first alert of the action under way; nil while the
+    /// action has shown none.
+    private var wasInSettingsBeforeAlert: Bool?
+
     private var sync: SyncService!
     private var syncStatus: SyncStatus = .off
     private var syncTimer: Timer?
@@ -47,7 +55,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var updateItem: NSMenuItem!
     private var updateSeparator: NSMenuItem!
 
-    private static let relativeFormatter = RelativeDateTimeFormatter()
+    /// In English like the rest of the menu, whatever the language of the system.
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        return formatter
+    }()
 
     private var lastBackupDate: Date? {
         UserDefaults.standard.object(forKey: Self.lastBackupKey) as? Date
@@ -155,6 +168,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Self.logger.error("Cannot register ⇧⌘V")
         }
 
+        settings = SettingsWindowController(
+            state: settingsState,
+            setOpensAtLogin: { [weak self] isOn in
+                self?.setOpensAtLogin(isOn)
+            },
+            onBecomeKey: { [weak self] in
+                self?.refreshSettings()
+            }
+        )
         setUpStatusItem(hotkeyRegistered: hotkeyRegistered)
         startUpdateChecks()
         registerLoginItem()
@@ -186,7 +208,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             warning.isEnabled = false
             menu.addItem(warning)
         }
-        let openItem = NSMenuItem(title: "Open History (⇧⌘V)", action: #selector(openHistory), keyEquivalent: "")
+        // Shown like the other shortcuts; the global one is registered by HotkeyManager.
+        let openItem = NSMenuItem(title: "Open History", action: #selector(openHistory), keyEquivalent: "v")
+        openItem.keyEquivalentModifierMask = [.command, .shift]
         openItem.target = self
         menu.addItem(openItem)
         let clearItem = NSMenuItem(title: "Clear History…", action: #selector(clearHistory), keyEquivalent: "")
@@ -196,7 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         backupNowItem = NSMenuItem(title: "Back Up Now", action: #selector(backUpNow), keyEquivalent: "")
         backupNowItem.target = self
         menu.addItem(backupNowItem)
-        restoreItem = NSMenuItem(title: "Restore from iCloud…", action: #selector(restoreBackup), keyEquivalent: "")
+        restoreItem = NSMenuItem(title: "Restore…", action: #selector(restoreBackup), keyEquivalent: "")
         restoreItem.target = self
         menu.addItem(restoreItem)
         backupInfoItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -209,6 +233,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         syncInfoItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         syncInfoItem.isEnabled = false
         menu.addItem(syncInfoItem)
+        menu.addItem(.separator())
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         // Manual enabling: with auto-enabling, AppKit would re-enable items that have a target.
@@ -223,18 +251,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.show()
     }
 
+    @objc private func openSettings() {
+        settings.show()
+    }
+
+    /// Shows `alert`. An action that may show one ends with `handFocusBack()`.
+    @discardableResult
+    private func runAlert(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        if wasInSettingsBeforeAlert == nil {
+            wasInSettingsBeforeAlert = settings.isKey
+        }
+        NSApp.activate()
+        return alert.runModal()
+    }
+
+    /// Once per action, after its last alert: hides the app so the next ⇧⌘V targets the app the user was in, not
+    /// us. Hiding would also hide the settings window, so the app stays in front when the user was in that window
+    /// before the first alert. Open behind another app it is closed: left hidden, it would come back with the next
+    /// alert.
+    private func handFocusBack() {
+        guard let wasInSettings = wasInSettingsBeforeAlert else {
+            return
+        }
+        wasInSettingsBeforeAlert = nil
+        if !wasInSettings {
+            settings.close()
+            NSApp.hide(nil)
+        }
+    }
+
     @objc private func clearHistory() {
+        defer {
+            handFocusBack()
+        }
         let alert = NSAlert()
         alert.messageText = "Clear the history?"
         alert.informativeText = "Untagged items will be deleted. Tagged items are kept. This cannot be undone."
         alert.addButton(withTitle: "Clear")
         alert.addButton(withTitle: "Cancel")
-        NSApp.activate()
-        if alert.runModal() == .alertFirstButtonReturn {
+        if runAlert(alert) == .alertFirstButtonReturn {
             store.removeUntagged()
         }
-        // Hand focus back so the next ⇧⌘V targets the app the user was in, not us.
-        NSApp.hide(nil)
     }
 
     // MARK: updates
@@ -368,35 +425,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func refreshSyncItems() {
+        let text = MenuSummary.syncText(syncStatus, isAvailable: sync.isAvailable, relative: Self.relative)
         syncItem.state = sync.isEnabled
             ? .on
             : .off
-        syncItem.isEnabled = sync.isEnabled || sync.isAvailable
-        let text = syncStatusText()
+        syncItem.isEnabled = MenuSummary.canToggleSync(isEnabled: sync.isEnabled, isAvailable: sync.isAvailable)
         syncInfoItem.title = text
         syncInfoItem.isHidden = text.isEmpty
-    }
-
-    /// Empty when there is nothing to say (sync off and possible).
-    private func syncStatusText() -> String {
-        let unavailable = "Not syncing: iCloud Drive is turned off"
-        switch syncStatus {
-        case .off:
-            guard sync.isAvailable else {
-                return unavailable
-            }
-            return ""
-        case .iCloudUnavailable:
-            return unavailable
-        case .synced(let date):
-            return "Synced \(Self.relativeFormatter.localizedString(for: date, relativeTo: Date()))"
-        case .newerVersionElsewhere:
-            return "Another Mac uses a newer version: update SimpleClipboard"
-        case .writeFailed:
-            return "Not syncing: could not write to iCloud Drive"
-        case .waitingForOtherMacs:
-            return "Not syncing: waiting for another Mac's data"
-        }
     }
 
     // MARK: backup
@@ -502,6 +537,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func backUpNow() {
+        defer {
+            handFocusBack()
+        }
         // A backup this Mac did not make (or one the first-launch decision has not settled), or one that may hold
         // what a damaged local file lost, is only replaced after the user confirms it.
         let block = automaticBackupBlock
@@ -513,10 +551,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 : "iCloud Drive already holds a backup that was not made from this Mac. It will be replaced with this Mac's data."
             alert.addButton(withTitle: "Replace")
             alert.addButton(withTitle: "Cancel")
-            NSApp.activate()
-            let response = alert.runModal()
-            NSApp.hide(nil)
-            guard response == .alertFirstButtonReturn else {
+            guard runAlert(alert) == .alertFirstButtonReturn else {
                 return
             }
         }
@@ -527,13 +562,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func restoreBackup() {
+        defer {
+            handFocusBack()
+        }
         let alert = NSAlert()
         alert.messageText = "Restore from iCloud Drive?"
         alert.informativeText = "The local history and tags will be replaced."
         alert.addButton(withTitle: "Restore")
         alert.addButton(withTitle: "Cancel")
-        NSApp.activate()
-        if alert.runModal() == .alertFirstButtonReturn {
+        if runAlert(alert) == .alertFirstButtonReturn {
             do {
                 // After the alert: timers keep saving while it is open. A write still on its way would land on top
                 // of the restored files.
@@ -550,16 +587,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 showError("Could not restore the backup", error: error)
             }
         }
-        NSApp.hide(nil)
     }
 
     private func showError(_ message: String, error: Error) {
         let alert = NSAlert()
         alert.messageText = message
         alert.informativeText = Self.describe(error)
-        NSApp.activate()
-        alert.runModal()
-        NSApp.hide(nil)
+        runAlert(alert)
     }
 
     private static func describe(_ error: Error) -> String {
@@ -581,57 +615,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private static func relative(_ date: Date) -> String {
+        relativeFormatter.localizedString(for: date, relativeTo: Date())
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         refreshBackupItems()
         refreshSyncItems()
     }
 
+    /// What the line says and when a backup can be restored is decided by `MenuSummary`; this gathers the state.
     private func refreshBackupItems() {
-        guard backup.isAvailable else {
-            backupNowItem.isEnabled = false
-            restoreItem.isEnabled = false
-            restoreItem.title = "Restore from iCloud…"
-            backupInfoItem.title = "iCloud Drive not available"
-            return
-        }
-        let hasBackup = backup.hasBackup
-        backupNowItem.isEnabled = true
-        restoreItem.isEnabled = hasBackup
-        restoreItem.title = hasBackup
-            ? "Restore from iCloud…"
-            : "No Backup in iCloud"
+        let isAvailable = backup.isAvailable
         let isAwaitingUser = !isBackupBootstrapDone
             && backupBootstrapDecision(
                 localWasEmptyAtFirstCheck: UserDefaults.standard.object(forKey: Self.backupBootstrapLocalWasEmptyKey) as? Bool
             ) == .awaitUser
-        let block = automaticBackupBlock
-        guard !isAwaitingUser, block != .notOwnBackup else {
-            backupInfoItem.title = "iCloud backup not restored: restore it or make a new backup"
-            return
-        }
-        guard block != .localDataLost else {
-            backupInfoItem.title = "Local data was damaged: restore the backup or make a new one"
-            return
-        }
-        backupInfoItem.title = lastBackupDate
-            .map { "Last backup: \(Self.relativeFormatter.localizedString(for: $0, relativeTo: Date()))" }
-            ?? "No backups yet"
+        backupNowItem.isEnabled = isAvailable
+        restoreItem.isEnabled = MenuSummary.canRestore(isAvailable: isAvailable, hasBackup: backup.hasBackup)
+        backupInfoItem.title = MenuSummary.backup(
+            isAvailable: isAvailable,
+            isAwaitingUser: isAwaitingUser,
+            block: automaticBackupBlock,
+            lastBackupDate: lastBackupDate
+        ).text(relative: Self.relative)
     }
 
-    /// Registers only on first launch so a user who disables it in System Settings is respected.
+    private func refreshSettings() {
+        settingsState.opensAtLogin = SMAppService.mainApp.status == .enabled
+    }
+
+    /// Registers only on first launch so a user who disables it, in Settings or in System Settings, is respected.
     private func registerLoginItem() {
-        let registeredKey = "loginItemRegistered"
-        guard !UserDefaults.standard.bool(forKey: registeredKey) else {
+        guard !UserDefaults.standard.bool(forKey: Self.loginItemRegisteredKey) else {
             return
         }
         do {
             if SMAppService.mainApp.status != .enabled {
                 try SMAppService.mainApp.register()
             }
-            UserDefaults.standard.set(true, forKey: registeredKey)
+            UserDefaults.standard.set(true, forKey: Self.loginItemRegisteredKey)
         } catch {
             Self.logger.error("Cannot register login item: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    private func setOpensAtLogin(_ isOn: Bool) {
+        defer {
+            handFocusBack()
+        }
+        // The view only hears of a value that changes: taken first, so that after a failure the refresh below puts
+        // the switch back.
+        settingsState.opensAtLogin = isOn
+        do {
+            if isOn {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            // The user has chosen: the first-launch registration must not run again.
+            UserDefaults.standard.set(true, forKey: Self.loginItemRegisteredKey)
+            Self.logger.info("Open at login set to \(isOn, privacy: .public)")
+        } catch {
+            Self.logger.error("Cannot change login item: \(error.localizedDescription, privacy: .public)")
+            // Only the settings window calls this, and it may not be key yet on the click that brings it forward.
+            wasInSettingsBeforeAlert = true
+            showError("Could not change the login item", error: error)
+        }
+        refreshSettings()
     }
 
     /// Shows the system dialog that leads to System Settings > Privacy > Accessibility.
