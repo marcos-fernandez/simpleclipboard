@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var restoreItem: NSMenuItem!
 
     private static let loginItemRegisteredKey = "loginItemRegistered"
+    private static let pickActionKey = "pickAction"
 
     private let settingsState = SettingsState()
     private var settings: SettingsWindowController!
@@ -60,6 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         formatter.locale = Locale(identifier: "en_US")
         return formatter
     }()
+
+    private var pickAction: PickAction {
+        PickAction(stored: UserDefaults.standard.string(forKey: Self.pickActionKey))
+    }
 
     private var lastBackupDate: Date? {
         UserDefaults.standard.object(forKey: Self.lastBackupKey) as? Date
@@ -154,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return
             }
             // Nothing pasted (its image file is missing) is not a use: the item keeps its place and nothing is saved.
-            if Paster.paste(item, imageData: store.imageData(for: item), into: target) {
+            if Paster.paste(item, imageData: store.imageData(for: item), into: target, action: pickAction) {
                 store.promote(id: item.id)
             }
         }
@@ -169,9 +174,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         settings = SettingsWindowController(
             state: settingsState,
-            setOpensAtLogin: { [weak self] isOn in
-                self?.setOpensAtLogin(isOn)
-            },
+            actions: SettingsActions(
+                setOpensAtLogin: { [weak self] isOn in
+                    self?.setOpensAtLogin(isOn)
+                },
+                setPickAction: { [weak self] action in
+                    self?.setPickAction(action)
+                },
+                openAccessibilitySettings: {
+                    NSWorkspace.shared.open(Config.accessibilitySettingsURL)
+                }
+            ),
             onBecomeKey: { [weak self] in
                 self?.refreshSettings()
             }
@@ -179,7 +192,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setUpStatusItem(hotkeyRegistered: hotkeyRegistered)
         startUpdateChecks()
         registerLoginItem()
-        requestAccessibilityIfNeeded()
+        // Only pasting needs the permission: set to copy, the app does not ask for it at launch.
+        if pickAction == .pasteDirectly {
+            requestAccessibilityIfNeeded()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -646,6 +662,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refreshSettings() {
         settingsState.opensAtLogin = SMAppService.mainApp.status == .enabled
+        settingsState.pickAction = pickAction
+        settingsState.isAccessibilityGranted = AXIsProcessTrusted()
+    }
+
+    private func setPickAction(_ action: PickAction) {
+        UserDefaults.standard.set(action.rawValue, forKey: Self.pickActionKey)
+        if action == .pasteDirectly {
+            requestAccessibilityIfNeeded()
+        }
+        refreshSettings()
     }
 
     /// Registers only on first launch so a user who disables it, in Settings or in System Settings, is respected.
