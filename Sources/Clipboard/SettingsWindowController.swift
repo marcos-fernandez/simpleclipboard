@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import ClipboardCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The app has no main menu, so ⌘W and Esc never close the window on their own.
 final class SettingsWindow: NSWindow {
@@ -10,6 +11,15 @@ final class SettingsWindow: NSWindow {
     var onMoveSelection: ((Int) -> Void)?
 
     override func keyDown(with event: NSEvent) {
+        // The arrows alone: with ⌘ or ⌥ they mean "to the end" or "by a page" in a list, not the next pane. Arrow
+        // keys carry .numericPad and .function themselves.
+        let modifiers = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .function, .numericPad])
+        guard modifiers.isEmpty else {
+            super.keyDown(with: event)
+            return
+        }
         switch Int(event.keyCode) {
         case kVK_UpArrow:
             onMoveSelection?(-1)
@@ -82,6 +92,21 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
         AppActivation.activate()
         window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Asks for apps on a sheet of the window; `completion` is not called when the user cancels.
+    func chooseApps(completion: @escaping @MainActor ([URL]) -> Void) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = "Add"
+        panel.beginSheetModal(for: window) { response in
+            if response == .OK {
+                completion(panel.urls)
+            }
+        }
     }
 
     func windowDidBecomeKey(_ notification: Notification) {

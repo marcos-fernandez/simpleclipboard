@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var backupNowItem: NSMenuItem!
     private var restoreItem: NSMenuItem!
 
+    private static let ignoredAppsKey = "ignoredSourceBundleIDs"
     private static let loginItemRegisteredKey = "loginItemRegistered"
     private static let pickActionKey = "pickAction"
 
@@ -61,6 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         formatter.locale = Locale(identifier: "en_US")
         return formatter
     }()
+
+    private var ignoredApps: [String] {
+        IgnoredApps.list(stored: UserDefaults.standard.stringArray(forKey: Self.ignoredAppsKey))
+    }
 
     private var pickAction: PickAction {
         PickAction(stored: UserDefaults.standard.string(forKey: Self.pickActionKey))
@@ -142,7 +147,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         RunLoop.main.add(launchBackupTimer, forMode: .common)
 
-        monitor = ClipboardMonitor(store: store)
+        monitor = ClipboardMonitor(store: store) { [weak self] in
+            Set(self?.ignoredApps ?? [])
+        }
         monitor.start()
 
         let purgeTimer = Timer(timeInterval: Config.purgeInterval, repeats: true) { [weak self] _ in
@@ -175,14 +182,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settings = SettingsWindowController(
             state: settingsState,
             actions: SettingsActions(
+                addIgnoredApps: { [weak self] in
+                    self?.addIgnoredApps()
+                },
+                openAccessibilitySettings: {
+                    NSWorkspace.shared.open(Config.accessibilitySettingsURL)
+                },
+                removeIgnoredApp: { [weak self] bundleID in
+                    self?.removeIgnoredApp(bundleID)
+                },
                 setOpensAtLogin: { [weak self] isOn in
                     self?.setOpensAtLogin(isOn)
                 },
                 setPickAction: { [weak self] action in
                     self?.setPickAction(action)
-                },
-                openAccessibilitySettings: {
-                    NSWorkspace.shared.open(Config.accessibilitySettingsURL)
                 }
             ),
             onBecomeKey: { [weak self] in
@@ -661,9 +674,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func refreshSettings() {
+        // Names and icons are looked up here, once per change, and not by the view each time it draws.
+        settingsState.ignoredApps = ignoredApps
+            .map(IgnoredAppRow.init(bundleID:))
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         settingsState.opensAtLogin = SMAppService.mainApp.status == .enabled
         settingsState.pickAction = pickAction
         settingsState.isAccessibilityGranted = AXIsProcessTrusted()
+    }
+
+    private func addIgnoredApps() {
+        settings.chooseApps { [weak self] urls in
+            guard let self else {
+                return
+            }
+            // Something that is not an app with an identifier cannot be told apart as the source of a copy.
+            let bundleIDs = urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
+            UserDefaults.standard.set(IgnoredApps.adding(bundleIDs, to: ignoredApps), forKey: Self.ignoredAppsKey)
+            refreshSettings()
+        }
+    }
+
+    private func removeIgnoredApp(_ bundleID: String) {
+        UserDefaults.standard.set(IgnoredApps.removing(bundleID, from: ignoredApps), forKey: Self.ignoredAppsKey)
+        refreshSettings()
     }
 
     private func setPickAction(_ action: PickAction) {

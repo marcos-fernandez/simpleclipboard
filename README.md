@@ -49,9 +49,15 @@ Code Signing).
 `⇧⌘V` opens the history · `←` `→` navigate · type to search · `Enter` paste or copy (see Settings) ·
 `⌘⌫` delete · `Esc` close · `⌘←` `⌘→` switch tab · `⌘T` tag · right-click a card or a tab for more options.
 
-"Settings…" in the menu-bar menu (`⌘,` while the menu is open): open at login, and what happens when an item is
-picked: "Paste Directly" (the default) or "Copy to Clipboard", which leaves the pasting to you. With the Settings
-window in front, a picked item is only copied.
+"Settings…" in the menu-bar menu (`⌘,` while the menu is open) opens a window with a pane per row of its sidebar
+(`↑` `↓` change pane):
+
+- **General**: open at login, and what happens when an item is picked: "Paste Directly" (the default) or "Copy to
+  Clipboard", which leaves the pasting to you.
+- **Privacy**: "Never Copy From", the apps whose copies are not kept in the history. Keychain Access is there from
+  the start; `+` adds apps and `−` removes the selected one, Keychain Access too.
+
+With the Settings window in front, a picked item is only copied.
 
 ## Data
 

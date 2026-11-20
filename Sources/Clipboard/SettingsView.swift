@@ -1,3 +1,4 @@
+import AppKit
 import ClipboardCore
 import Observation
 import SwiftUI
@@ -34,12 +35,35 @@ enum SettingsPane: CaseIterable {
     }
 }
 
+/// An app of the "Never Copy From" list, as the list shows it.
+struct IgnoredAppRow: Identifiable {
+    /// The bundle identifier.
+    let id: String
+    let icon: NSImage
+    let name: String
+
+    /// An app that is not installed has no name or icon to show: its identifier and the icon of any app.
+    init(bundleID: String) {
+        id = bundleID
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            icon = NSWorkspace.shared.icon(for: .application)
+            name = bundleID
+            return
+        }
+        icon = NSWorkspace.shared.icon(forFile: url.path)
+        name = FileManager.default.displayName(atPath: url.path)
+    }
+}
+
 /// What the settings window shows. `AppDelegate` owns the values and refreshes them; the pane on show is the
 /// window's own.
 @MainActor
 @Observable
 final class SettingsState {
+    var ignoredApps: [IgnoredAppRow] = []
     var pane = SettingsPane.general
+    /// The app selected in the "Never Copy From" list, by bundle identifier.
+    var selectedIgnoredAppID: String?
     var opensAtLogin = false
     var pickAction = PickAction.pasteDirectly
     var isAccessibilityGranted = false
@@ -54,9 +78,11 @@ final class SettingsState {
 
 @MainActor
 struct SettingsActions {
+    let addIgnoredApps: @MainActor () -> Void
+    let openAccessibilitySettings: @MainActor () -> Void
+    let removeIgnoredApp: @MainActor (String) -> Void
     let setOpensAtLogin: @MainActor (Bool) -> Void
     let setPickAction: @MainActor (PickAction) -> Void
-    let openAccessibilitySettings: @MainActor () -> Void
 }
 
 /// The system's sidebar material, which SwiftUI only gives to a List.
@@ -82,6 +108,8 @@ struct SettingsView: View {
     private static let radioSpacing: CGFloat = 8
     /// Lines the header up with the boxes of the form.
     private static let headerInset: CGFloat = 20
+    /// Room for six apps: the list scrolls past that, so the window keeps its height however many there are.
+    private static let ignoredAppsHeight: CGFloat = 170
     private static let paneWidth: CGFloat = 490
     /// The same for every row, so the names line up whatever the width of each symbol.
     private static let sidebarIconWidth: CGFloat = 22
@@ -158,24 +186,69 @@ struct SettingsView: View {
         case .general:
             general(showsAccessibilityNotice: atItsTallest || isAccessibilityNoticeDue)
         case .privacy:
-            Text("Nothing here yet")
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
+            privacy
         }
+    }
+
+    private var privacy: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Never Copy From")
+                .font(.headline)
+            Text("What you copy from these apps is not kept in the history.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            List(
+                state.ignoredApps,
+                selection: Binding(get: { state.selectedIgnoredAppID }, set: { state.selectedIgnoredAppID = $0 })
+            ) { app in
+                HStack(spacing: 8) {
+                    Image(nsImage: app.icon)
+                        .resizable()
+                        .frame(width: 20, height: 20)
+                    Text(app.name)
+                }
+            }
+            .listStyle(.bordered)
+            .alternatingRowBackgrounds()
+            .frame(height: Self.ignoredAppsHeight)
+            .onDeleteCommand(perform: removeSelectedIgnoredApp)
+            HStack(spacing: 12) {
+                Button(action: actions.addIgnoredApps) {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add Apps…")
+                Button(action: removeSelectedIgnoredApp) {
+                    Image(systemName: "minus")
+                }
+                .accessibilityLabel("Remove App")
+                .disabled(state.selectedIgnoredAppID == nil)
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(Self.headerInset)
+    }
+
+    private func removeSelectedIgnoredApp() {
+        guard let bundleID = state.selectedIgnoredAppID else {
+            return
+        }
+        state.selectedIgnoredAppID = nil
+        actions.removeIgnoredApp(bundleID)
     }
 
     private func sidebarRow(_ pane: SettingsPane) -> some View {
         let isSelected = state.pane == pane
-        // As the system's sidebars: the accent colour only while the window is the one in use.
+        // As the system's sidebars: the selection colour only while the window is the one in use, with the text
+        // colour the system pairs with it (white is not readable on every accent colour).
         let isEmphasized = isSelected && controlActiveState == .key
         let selectedBackground = isEmphasized
-            ? Color.accentColor
+            ? Color(nsColor: .selectedContentBackgroundColor)
             : Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
         let background = isSelected
             ? selectedBackground
             : Color.clear
         let foreground = isEmphasized
-            ? Color.white
+            ? Color(nsColor: .alternateSelectedControlTextColor)
             : Color.primary
         let traits: AccessibilityTraits = isSelected
             ? .isSelected
