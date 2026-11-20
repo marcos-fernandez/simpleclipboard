@@ -150,15 +150,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         RunLoop.main.add(purgeTimer, forMode: .common)
         self.purgeTimer = purgeTimer
 
-        panel = PanelController(store: store) { [weak self] item, target in
-            guard let self else {
-                return
+        panel = PanelController(
+            store: store,
+            onPick: { [weak self] item, target in
+                guard let self else {
+                    return
+                }
+                // Nothing pasted (its image file is missing) is not a use: the item keeps its place and nothing is
+                // saved.
+                if Paster.paste(item, imageData: store.imageData(for: item), into: target) {
+                    store.promote(id: item.id)
+                }
+            },
+            onOpenSettings: { [weak self] in
+                self?.openSettings()
             }
-            // Nothing pasted (its image file is missing) is not a use: the item keeps its place and nothing is saved.
-            if Paster.paste(item, imageData: store.imageData(for: item), into: target) {
-                store.promote(id: item.id)
-            }
-        }
+        )
 
         hotkey = HotkeyManager { [weak self] in
             self?.panel.toggle()

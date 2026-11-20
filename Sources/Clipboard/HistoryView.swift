@@ -5,6 +5,7 @@ struct HistoryView: View {
     let store: HistoryStore
     @Bindable var state: PanelState
     let onPick: (ClipItem) -> Void
+    let onOpenSettings: () -> Void
 
     @FocusState private var searchFocused: Bool
 
@@ -12,7 +13,10 @@ struct HistoryView: View {
         let results = state.results(in: store)
         let selectedIndex = state.selectedIndex(in: results)
         VStack(spacing: 12) {
-            TabBarView(store: store, state: state)
+            HStack(spacing: 8) {
+                TabBarView(store: store, state: state)
+                settingsButton
+            }
 
             TextField("Search history", text: $state.query)
                 .textFieldStyle(.roundedBorder)
@@ -51,6 +55,19 @@ struct HistoryView: View {
         .onChange(of: state.focusRequest) {
             searchFocused = true
         }
+    }
+
+    private var settingsButton: some View {
+        Button(action: onOpenSettings) {
+            Image(systemName: "gearshape")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Settings…")
+        .accessibilityLabel("Settings")
     }
 
     private var emptyMessage: String {

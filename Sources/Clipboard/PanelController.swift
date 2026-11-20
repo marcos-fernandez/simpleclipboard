@@ -142,9 +142,17 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var keyMonitor: Any?
     private var previousApp: NSRunningApplication?
 
-    init(store: HistoryStore, onPick: @escaping (ClipItem, NSRunningApplication?) -> Void) {
+    private let onOpenSettings: () -> Void
+
+    /// `onOpenSettings`: called after the panel hides, when the user clicks its settings button.
+    init(
+        store: HistoryStore,
+        onPick: @escaping (ClipItem, NSRunningApplication?) -> Void,
+        onOpenSettings: @escaping () -> Void
+    ) {
         self.store = store
         self.onPick = onPick
+        self.onOpenSettings = onOpenSettings
         // Non-activating: the app the user was typing in stays frontmost.
         panel = KeyablePanel(
             contentRect: .zero,
@@ -162,9 +170,16 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.hidesOnDeactivate = false
         panel.delegate = self
         panel.contentView = NSHostingView(
-            rootView: HistoryView(store: store, state: state) { [weak self] item in
-                self?.pick(item)
-            }
+            rootView: HistoryView(
+                store: store,
+                state: state,
+                onPick: { [weak self] item in
+                    self?.pick(item)
+                },
+                onOpenSettings: { [weak self] in
+                    self?.openSettings()
+                }
+            )
         )
     }
 
@@ -217,6 +232,12 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     func windowDidResignKey(_ notification: Notification) {
         hide()
+    }
+
+    /// The panel sits above normal windows, so it goes away before the settings window comes to the front.
+    private func openSettings() {
+        hide()
+        onOpenSettings()
     }
 
     private func pick(_ item: ClipItem) {
