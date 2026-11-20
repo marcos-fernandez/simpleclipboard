@@ -49,23 +49,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         )
     }
 
-    /// True while the user is in the window: false when it is closed or behind another app.
-    var isKey: Bool {
-        window.isKeyWindow
-    }
-
     func show() {
         // Before the window is drawn: it would open with the values of the last time and then change.
         onBecomeKey()
         if !window.isVisible {
             window.center()
         }
-        NSApp.activate()
+        AppActivation.activate()
         window.makeKeyAndOrderFront(nil)
-    }
-
-    func close() {
-        window.close()
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
