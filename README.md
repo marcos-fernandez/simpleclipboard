@@ -40,16 +40,18 @@ Code Signing).
 ## Permissions
 
 - **Accessibility**: needed to paste directly (it simulates `⌘V`). Without it, the
-  item is only copied to the clipboard.
+  item is only copied to the clipboard. The app only asks for it while Settings is
+  set to "Paste Directly".
 - If macOS asks about clipboard access, choose "Always Allow".
 
 ## Usage
 
-`⇧⌘V` opens the history · `←` `→` navigate · type to search · `Enter` paste ·
+`⇧⌘V` opens the history · `←` `→` navigate · type to search · `Enter` paste or copy (see Settings) ·
 `⌘⌫` delete · `Esc` close · `⌘←` `⌘→` switch tab · `⌘T` tag · right-click a card or a tab for more options.
 
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open), or the gear next to the tabs of the history: open at
-login. With the Settings window in front, an item picked from the history is only copied.
+login, and what happens when an item is picked: "Paste Directly" (the default) or "Copy to Clipboard", which leaves
+the pasting to you. With the Settings window in front, a picked item is only copied.
 
 ## Data
 

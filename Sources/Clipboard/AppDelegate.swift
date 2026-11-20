@@ -32,12 +32,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var restoreItem: NSMenuItem!
 
     private static let loginItemRegisteredKey = "loginItemRegistered"
+    private static let pickActionKey = "pickAction"
 
     private let settingsState = SettingsState()
     private var settings: SettingsWindowController!
-    /// Whether the user was in the settings window before the first alert of the action under way; nil while the
-    /// action has shown none.
-    private var wasInSettingsBeforeAlert: Bool?
+    /// The app in front when the action under way asked for its first alert; nil while the action has shown none.
+    private var appInFrontBeforeAlert: NSRunningApplication?
 
     private var sync: SyncService!
     private var syncStatus: SyncStatus = .off
@@ -61,6 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         formatter.locale = Locale(identifier: "en_US")
         return formatter
     }()
+
+    private var pickAction: PickAction {
+        PickAction(stored: UserDefaults.standard.string(forKey: Self.pickActionKey))
+    }
 
     private var lastBackupDate: Date? {
         UserDefaults.standard.object(forKey: Self.lastBackupKey) as? Date
@@ -158,7 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 // Nothing pasted (its image file is missing) is not a use: the item keeps its place and nothing is
                 // saved.
-                if Paster.paste(item, imageData: store.imageData(for: item), into: target) {
+                if Paster.paste(item, imageData: store.imageData(for: item), into: target, action: pickAction) {
                     store.promote(id: item.id)
                 }
             },
@@ -177,9 +181,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         settings = SettingsWindowController(
             state: settingsState,
-            setOpensAtLogin: { [weak self] isOn in
-                self?.setOpensAtLogin(isOn)
-            },
+            actions: SettingsActions(
+                setOpensAtLogin: { [weak self] isOn in
+                    self?.setOpensAtLogin(isOn)
+                },
+                setPickAction: { [weak self] action in
+                    self?.setPickAction(action)
+                },
+                openAccessibilitySettings: {
+                    NSWorkspace.shared.open(Config.accessibilitySettingsURL)
+                }
+            ),
             onBecomeKey: { [weak self] in
                 self?.refreshSettings()
             }
@@ -187,7 +199,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setUpStatusItem(hotkeyRegistered: hotkeyRegistered)
         startUpdateChecks()
         registerLoginItem()
-        requestAccessibilityIfNeeded()
+        // Only pasting needs the permission: set to copy, the app does not ask for it at launch.
+        if pickAction == .pasteDirectly {
+            requestAccessibilityIfNeeded()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -265,25 +280,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Shows `alert`. An action that may show one ends with `handFocusBack()`.
     @discardableResult
     private func runAlert(_ alert: NSAlert) -> NSApplication.ModalResponse {
-        if wasInSettingsBeforeAlert == nil {
-            wasInSettingsBeforeAlert = settings.isKey
+        if appInFrontBeforeAlert == nil {
+            appInFrontBeforeAlert = NSWorkspace.shared.frontmostApplication
         }
-        NSApp.activate()
+        AppActivation.activate()
         return alert.runModal()
     }
 
-    /// Once per action, after its last alert: hides the app so the next ⇧⌘V targets the app the user was in, not
-    /// us. Hiding would also hide the settings window, so the app stays in front when the user was in that window
-    /// before the first alert. Open behind another app it is closed: left hidden, it would come back with the next
-    /// alert.
+    /// Once per action, after its last alert: gives focus back to the app that was in front, so the next ⇧⌘V targets
+    /// it and not us. The app is not hidden, which would take the settings window with it: that window stays as it
+    /// was. Whether the user was in it cannot be told: a click on the menu-bar item already puts the other app in
+    /// front, before the menu opens.
     private func handFocusBack() {
-        guard let wasInSettings = wasInSettingsBeforeAlert else {
+        guard let app = appInFrontBeforeAlert else {
             return
         }
-        wasInSettingsBeforeAlert = nil
-        if !wasInSettings {
-            settings.close()
+        appInFrontBeforeAlert = nil
+        guard app != .current else {
+            return
+        }
+        if app.isTerminated {
             NSApp.hide(nil)
+        } else {
+            app.activate()
         }
     }
 
@@ -650,6 +669,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refreshSettings() {
         settingsState.opensAtLogin = SMAppService.mainApp.status == .enabled
+        settingsState.pickAction = pickAction
+        settingsState.isAccessibilityGranted = AXIsProcessTrusted()
+    }
+
+    private func setPickAction(_ action: PickAction) {
+        UserDefaults.standard.set(action.rawValue, forKey: Self.pickActionKey)
+        if action == .pasteDirectly {
+            requestAccessibilityIfNeeded()
+        }
+        refreshSettings()
     }
 
     /// Registers only on first launch so a user who disables it, in Settings or in System Settings, is respected.
@@ -685,8 +714,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Self.logger.info("Open at login set to \(isOn, privacy: .public)")
         } catch {
             Self.logger.error("Cannot change login item: \(error.localizedDescription, privacy: .public)")
-            // Only the settings window calls this, and it may not be key yet on the click that brings it forward.
-            wasInSettingsBeforeAlert = true
+            // Only the settings window calls this: the user stays in it, even when the click that flipped the switch
+            // is the one that brought it forward and another app is still in front.
+            appInFrontBeforeAlert = .current
             showError("Could not change the login item", error: error)
         }
         refreshSettings()

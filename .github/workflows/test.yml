@@ -1,0 +1,15 @@
+# Runs the tests on every pull request, with the same runner that builds the releases: what compiles on a
+# developer's Mac may not compile there.
+name: Test
+
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Test
+        run: scripts/test.sh
