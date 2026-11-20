@@ -132,7 +132,7 @@ final class KeyablePanel: NSPanel {
 
 @MainActor
 final class PanelController: NSObject, NSWindowDelegate {
-    private static let height: CGFloat = 330
+    private static let height: CGFloat = 300
     private static let margin: CGFloat = 8
 
     private let store: HistoryStore
