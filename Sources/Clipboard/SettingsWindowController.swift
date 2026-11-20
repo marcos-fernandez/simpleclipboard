@@ -1,9 +1,25 @@
 import AppKit
+import Carbon.HIToolbox
 import ClipboardCore
 import SwiftUI
 
 /// The app has no main menu, so ⌘W and Esc never close the window on their own.
 final class SettingsWindow: NSWindow {
+    /// Called with -1 or 1 when ↑ or ↓ reaches the window, that is, when nothing in it (a list, a text field) took
+    /// the key: the rows of the sidebar are drawn by hand and the keyboard would not reach them otherwise.
+    var onMoveSelection: ((Int) -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        switch Int(event.keyCode) {
+        case kVK_UpArrow:
+            onMoveSelection?(-1)
+        case kVK_DownArrow:
+            onMoveSelection?(1)
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         // Caps Lock is a device-independent flag too; drop it so "only ⌘" compares cleanly.
         let modifiers = event.modifierFlags
@@ -43,13 +59,19 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.delegate = self
         // Kept for the next time it is opened.
         window.isReleasedWhenClosed = false
-        // The app's name is what Mission Control shows; in the window, the pane's name is the header of the view.
-        window.title = Config.appName
+        // Not on show: it would sit across the sidebar and the pane, above the header that already names the pane.
+        // It is still what Mission Control and VoiceOver say (see `SettingsPane.windowTitle`).
+        window.title = state.pane.windowTitle
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.contentViewController = NSHostingController(
-            rootView: SettingsView(state: state, actions: actions)
+            rootView: SettingsView(state: state, actions: actions) { [window] pane in
+                window.title = pane.windowTitle
+            }
         )
+        window.onMoveSelection = { offset in
+            state.movePane(by: offset)
+        }
     }
 
     func show() {

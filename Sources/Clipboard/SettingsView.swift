@@ -2,18 +2,16 @@ import ClipboardCore
 import Observation
 import SwiftUI
 
-/// The panes of the settings window, in the order of the sidebar.
-enum SettingsSection: CaseIterable {
+/// The panes of the settings window, in the order of the sidebar. Only the ones with something in them: a pane is
+/// added here together with its content.
+enum SettingsPane: CaseIterable {
     case general
-    case keyboardShortcuts
     case privacy
 
     var symbolName: String {
         switch self {
         case .general:
             return "gearshape"
-        case .keyboardShortcuts:
-            return "keyboard"
         case .privacy:
             return "hand.raised"
         }
@@ -23,11 +21,16 @@ enum SettingsSection: CaseIterable {
         switch self {
         case .general:
             return "General"
-        case .keyboardShortcuts:
-            return "Keyboard Shortcuts"
         case .privacy:
             return "Privacy"
         }
+    }
+
+    /// The title of the window while this pane is on show. The pane, as in any settings window, after the app's
+    /// name: the app has no Dock icon and no place in the app switcher, so in Mission Control the title is all that
+    /// says whose window it is.
+    var windowTitle: String {
+        "\(Config.appName) — \(title)"
     }
 }
 
@@ -36,10 +39,17 @@ enum SettingsSection: CaseIterable {
 @MainActor
 @Observable
 final class SettingsState {
-    var section = SettingsSection.general
+    var pane = SettingsPane.general
     var opensAtLogin = false
     var pickAction = PickAction.pasteDirectly
     var isAccessibilityGranted = false
+
+    /// The pane `offset` rows away in the sidebar, stopping at its ends.
+    func movePane(by offset: Int) {
+        let panes = SettingsPane.allCases
+        let index = (panes.firstIndex(of: pane) ?? 0) + offset
+        pane = panes[min(max(0, index), panes.count - 1)]
+    }
 }
 
 @MainActor
@@ -63,35 +73,46 @@ private struct SidebarBackground: NSViewRepresentable {
 struct SettingsView: View {
     let state: SettingsState
     let actions: SettingsActions
+    /// Called when another pane comes on show, by the sidebar or by the keyboard.
+    let onPaneChange: (SettingsPane) -> Void
+
+    /// Whether the window is the one in use: the system's sidebars grey their selection when it is not.
+    @Environment(\.controlActiveState) private var controlActiveState
 
     private static let radioSpacing: CGFloat = 8
     /// Lines the header up with the boxes of the form.
     private static let headerInset: CGFloat = 20
-    private static let paneSize = CGSize(width: 490, height: 420)
+    private static let paneWidth: CGFloat = 490
     /// The same for every row, so the names line up whatever the width of each symbol.
     private static let sidebarIconWidth: CGFloat = 22
     private static let sidebarInset: CGFloat = 10
+    /// Inside a row, on each side of its symbol and name.
+    private static let sidebarRowInset: CGFloat = 8
     private static let sidebarRowSpacing: CGFloat = 2
     private static let sidebarTopInset: CGFloat = 20
 
     var body: some View {
         // Not a NavigationSplitView: its divider can be dragged and its sidebar collapsed whatever widths it is given,
-        // and the sidebar is the only way to change pane.
+        // and a collapsed sidebar leaves no sign of the other panes.
         HStack(spacing: 0) {
             sidebar
             Divider()
                 .ignoresSafeArea()
-            pane
+            selectedPane
         }
-        .frame(height: Self.paneSize.height)
+        // The window takes this height: the sidebar alone fills whatever it is given and would set none.
+        .fixedSize(horizontal: false, vertical: true)
+        .onChange(of: state.pane) { _, pane in
+            onPaneChange(pane)
+        }
     }
 
     /// Drawn here and not a List: as wide as its longest name, whatever the language, where a List cuts the name to
     /// the width it is given.
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: Self.sidebarRowSpacing) {
-            ForEach(SettingsSection.allCases, id: \.self) { section in
-                sidebarRow(section)
+            ForEach(SettingsPane.allCases, id: \.self) { pane in
+                sidebarRow(pane)
             }
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -104,48 +125,72 @@ struct SettingsView: View {
     }
 
     /// The name of the pane on show and, under it, its content.
-    private var pane: some View {
+    private var selectedPane: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(state.section.title)
+            Text(state.pane.title)
                 .font(.title2)
                 .fontWeight(.semibold)
                 .padding(.horizontal, Self.headerInset)
                 .accessibilityAddTraits(.isHeader)
-            switch state.section {
-            case .general:
-                general
-            case .keyboardShortcuts, .privacy:
-                Text("Nothing here yet")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Every pane is laid out at its tallest, unseen, under the selected one: the window is as tall as the
+            // tallest pane can get and keeps that height whatever the pane and whatever it shows, as the sidebar is
+            // as wide as its longest name. A window that changes size with a setting moves what the user is on.
+            ZStack(alignment: .topLeading) {
+                ForEach(SettingsPane.allCases, id: \.self) { pane in
+                    // Hidden and not transparent: a transparent control still takes the keyboard focus, and would
+                    // be switched or typed into unseen.
+                    content(of: pane, atItsTallest: true)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .hidden()
+                }
+                content(of: state.pane, atItsTallest: false)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(width: Self.paneSize.width, alignment: .topLeading)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(width: Self.paneWidth, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func sidebarRow(_ section: SettingsSection) -> some View {
-        let isSelected = state.section == section
-        let background = isSelected
+    /// `atItsTallest`: with everything the pane can show, for the copy that only gives the window its height.
+    @ViewBuilder
+    private func content(of pane: SettingsPane, atItsTallest: Bool) -> some View {
+        switch pane {
+        case .general:
+            general(showsAccessibilityNotice: atItsTallest || isAccessibilityNoticeDue)
+        case .privacy:
+            Text("Nothing here yet")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func sidebarRow(_ pane: SettingsPane) -> some View {
+        let isSelected = state.pane == pane
+        // As the system's sidebars: the accent colour only while the window is the one in use.
+        let isEmphasized = isSelected && controlActiveState == .key
+        let selectedBackground = isEmphasized
             ? Color.accentColor
+            : Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
+        let background = isSelected
+            ? selectedBackground
             : Color.clear
-        let foreground = isSelected
+        let foreground = isEmphasized
             ? Color.white
             : Color.primary
         let traits: AccessibilityTraits = isSelected
             ? .isSelected
             : []
         return Button {
-            state.section = section
+            state.pane = pane
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: section.symbolName)
+                Image(systemName: pane.symbolName)
                     .frame(width: Self.sidebarIconWidth)
-                Text(section.title)
+                Text(pane.title)
             }
             // Every row as wide as the widest one.
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Self.sidebarRowInset)
             .padding(.vertical, 6)
             .foregroundStyle(foreground)
             .background(background, in: RoundedRectangle(cornerRadius: 8))
@@ -155,7 +200,12 @@ struct SettingsView: View {
         .accessibilityAddTraits(traits)
     }
 
-    private var general: some View {
+    /// "Paste Directly" is chosen and cannot work yet.
+    private var isAccessibilityNoticeDue: Bool {
+        state.pickAction == .pasteDirectly && !state.isAccessibilityGranted
+    }
+
+    private func general(showsAccessibilityNotice: Bool) -> some View {
         Form {
             Section {
                 Toggle(
@@ -172,7 +222,7 @@ struct SettingsView: View {
                         title: "Paste Directly",
                         caption: "The item is pasted into the app you are using."
                     )
-                    if state.pickAction == .pasteDirectly, !state.isAccessibilityGranted {
+                    if showsAccessibilityNotice {
                         HStack(spacing: Self.radioSpacing) {
                             // As wide as the radio button, so the notice lines up with the option's text.
                             Image(systemName: "circle")
