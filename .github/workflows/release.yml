@@ -1,9 +1,19 @@
-# Publishes SimpleClipboard.zip (Apple Silicon + Intel) as a GitHub release when a tag like v1.2.0 is pushed.
+# Publishes SimpleClipboard.zip (Apple Silicon + Intel) as a GitHub release:
+# - on every push to main (a merged pull request): the next minor version, v1.2.0 after v1.1.0;
+# - when a tag like v2.0.0 is pushed by hand: that version, which is how a major one is made.
 name: Release
 
 on:
   push:
+    branches: [main]
+    # A change of the documentation alone is not a new version. Not applied to tags.
+    paths-ignore: ["**.md"]
     tags: ["v*"]
+
+# One at a time: two merges in a row must not work out the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -13,13 +23,38 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # All the tags: the next version is worked out from the latest one.
+          fetch-depth: 0
 
       - name: Test
         run: scripts/test.sh
 
+      - name: Work out the version
+        id: version
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            tag="${GITHUB_REF_NAME}"
+          elif [[ -n "$(git tag --points-at HEAD --list 'v*')" ]]; then
+            # Tagged by hand (a major version): the run of that tag publishes it.
+            echo "This commit already has a version tag; nothing to publish from main."
+            tag=""
+          else
+            latest="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
+            # Stated, not left to "set -e": the bash of macOS does not stop on a failed [[ ]].
+            if ! [[ "${latest}" =~ ^v([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
+              echo "The latest tag '${latest}' is not a version like v1.2.3." >&2
+              exit 1
+            fi
+            tag="v${BASH_REMATCH[1]}.$((BASH_REMATCH[2] + 1)).0"
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
       # The same self-signed certificate for every release: macOS ties the Accessibility permission to it, so an
       # update signed with another one (or ad-hoc) would have to be granted the permission again.
       - name: Import the signing certificate
+        if: steps.version.outputs.tag != ''
         env:
           SIGNING_CERTIFICATE_P12: ${{ secrets.SIGNING_CERTIFICATE_P12 }}
           SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
@@ -37,18 +72,23 @@ jobs:
           rm "${RUNNER_TEMP}/signing.p12"
 
       - name: Build
+        if: steps.version.outputs.tag != ''
         env:
           UNIVERSAL: "1"
           SIGNING_IDENTITY: SimpleClipboard Release Signing
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          APP_VERSION="${GITHUB_REF_NAME#v}" scripts/build-app.sh
+          APP_VERSION="${TAG#v}" scripts/build-app.sh
           # build-app.sh falls back to ad-hoc signing when the certificate is missing: a release must not.
           codesign -d -r- build/SimpleClipboard.app 2>&1 | grep "certificate" >/dev/null
           lipo -archs build/SimpleClipboard.app/Contents/MacOS/SimpleClipboard
           ditto -c -k --keepParent build/SimpleClipboard.app SimpleClipboard.zip
 
+      # From main the tag does not exist yet: it is created on the commit that was built.
       - name: Publish
+        if: steps.version.outputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" SimpleClipboard.zip --generate-notes
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh release create "${TAG}" SimpleClipboard.zip --target "${GITHUB_SHA}" --generate-notes

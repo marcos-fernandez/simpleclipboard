@@ -36,9 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private let settingsState = SettingsState()
     private var settings: SettingsWindowController!
-    /// Whether the user was in the settings window before the first alert of the action under way; nil while the
-    /// action has shown none.
-    private var wasInSettingsBeforeAlert: Bool?
+    /// The app in front when the action under way asked for its first alert; nil while the action has shown none.
+    private var appInFrontBeforeAlert: NSRunningApplication?
 
     private var sync: SyncService!
     private var syncStatus: SyncStatus = .off
@@ -274,25 +273,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Shows `alert`. An action that may show one ends with `handFocusBack()`.
     @discardableResult
     private func runAlert(_ alert: NSAlert) -> NSApplication.ModalResponse {
-        if wasInSettingsBeforeAlert == nil {
-            wasInSettingsBeforeAlert = settings.isKey
+        if appInFrontBeforeAlert == nil {
+            appInFrontBeforeAlert = NSWorkspace.shared.frontmostApplication
         }
-        NSApp.activate()
+        AppActivation.activate()
         return alert.runModal()
     }
 
-    /// Once per action, after its last alert: hides the app so the next ⇧⌘V targets the app the user was in, not
-    /// us. Hiding would also hide the settings window, so the app stays in front when the user was in that window
-    /// before the first alert. Open behind another app it is closed: left hidden, it would come back with the next
-    /// alert.
+    /// Once per action, after its last alert: gives focus back to the app that was in front, so the next ⇧⌘V targets
+    /// it and not us. The app is not hidden, which would take the settings window with it: that window stays as it
+    /// was. Whether the user was in it cannot be told: a click on the menu-bar item already puts the other app in
+    /// front, before the menu opens.
     private func handFocusBack() {
-        guard let wasInSettings = wasInSettingsBeforeAlert else {
+        guard let app = appInFrontBeforeAlert else {
             return
         }
-        wasInSettingsBeforeAlert = nil
-        if !wasInSettings {
-            settings.close()
+        appInFrontBeforeAlert = nil
+        guard app != .current else {
+            return
+        }
+        if app.isTerminated {
             NSApp.hide(nil)
+        } else {
+            app.activate()
         }
     }
 
@@ -704,8 +707,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Self.logger.info("Open at login set to \(isOn, privacy: .public)")
         } catch {
             Self.logger.error("Cannot change login item: \(error.localizedDescription, privacy: .public)")
-            // Only the settings window calls this, and it may not be key yet on the click that brings it forward.
-            wasInSettingsBeforeAlert = true
+            // Only the settings window calls this: the user stays in it, even when the click that flipped the switch
+            // is the one that brought it forward and another app is still in front.
+            appInFrontBeforeAlert = .current
             showError("Could not change the login item", error: error)
         }
         refreshSettings()
