@@ -46,7 +46,8 @@ Code Signing).
 ## Usage
 
 `⇧⌘V` opens the history · `←` `→` navigate · type to search · `Enter` paste ·
-`⌘⌫` delete · `Esc` close · `⌘←` `⌘→` switch tab · `⌘T` tag · right-click a card or a tab for more options.
+`⌘1`…`⌘0` paste the card with that number · `⌘⌫` delete · `Esc` close · `⌘←` `⌘→` switch tab · `⌘T` tag ·
+right-click a card or a tab for more options.
 
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open): open at login. With the Settings window in front,
 an item picked from the history is only copied.

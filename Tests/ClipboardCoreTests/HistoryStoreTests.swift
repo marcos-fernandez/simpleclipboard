@@ -135,6 +135,21 @@ struct HistoryStoreTests {
         #expect(store.items.isEmpty)
     }
 
+    @Test func nothingExpiredIsLeftAfterAPurge() {
+        // The panel refuses to act on a card while any item it shows has expired, and purges to get out of that:
+        // an expired item that a purge kept would leave Return and the card shortcuts doing nothing for good.
+        let store = makeStore()
+        store.add(.text("normal"), source: safari, concealed: false)
+        store.add(.text("s3cr3t"), source: onePassword, concealed: true)
+        store.add(.image(Data([9, 9, 9])), source: onePassword, concealed: true)
+
+        clock.advance(Config.concealedLifetime)
+        #expect(store.items.contains { $0.isExpired(at: clock.current) })
+        store.purgeExpired()
+        #expect(!store.items.contains { $0.isExpired(at: clock.current) })
+        #expect(store.items.map(\.text) == ["normal"])
+    }
+
     @Test func concealedItemsNeverReachDisk() {
         let store = makeStore()
         store.add(.text("s3cr3t"), source: onePassword, concealed: true)

@@ -7,7 +7,9 @@ import ImageIO
 /// Display only: pasting reads the full-size data from the store, never this cache.
 @MainActor
 enum ThumbnailCache {
-    /// Cards are 220×220 pt; twice that covers Retina screens.
+    /// A card draws its image in an area as wide as the card less its padding, some 220 pt on most screens, and
+    /// shorter than that. Twice that width covers Retina screens; on the widest cards a wide image is drawn slightly
+    /// enlarged.
     private static let maxPixelSize = 440
     private static let cache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()

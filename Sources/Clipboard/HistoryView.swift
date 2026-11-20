@@ -24,7 +24,7 @@ struct HistoryView: View {
     var body: some View {
         let results = state.results(in: store)
         let selectedIndex = state.selectedIndex(in: results)
-        VStack(spacing: 12) {
+        VStack(spacing: PanelMetrics.stripSpacing) {
             // One row, centred: the search field keeps its width and the tabs take what they need.
             HStack(spacing: 12) {
                 // Drawn here: taller and rounder than the system's bordered field, like the search of System Settings.
@@ -47,7 +47,7 @@ struct HistoryView: View {
                     }
                 }
                 .padding(.horizontal, 10)
-                .frame(width: 280, height: 30)
+                .frame(width: 280, height: PanelMetrics.searchRowHeight)
                 .background(Color.primary.opacity(0.08), in: Capsule())
                 .overlay {
                     if searchFocused {
@@ -66,7 +66,7 @@ struct HistoryView: View {
                 cards(results, selectedIndex: selectedIndex)
             }
         }
-        .padding(16)
+        .padding(PanelMetrics.stripPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .overlay {
@@ -112,15 +112,20 @@ struct HistoryView: View {
     private func cards(_ results: [ClipItem], selectedIndex: Int) -> some View {
         // By id, so no indexed copy of the whole list is built on every body pass.
         let selectedCardID = results[selectedIndex].id
+        // The first cards, which fit on the screen, show the shortcut that picks them (see `CardShortcuts`).
+        let shortcutIDs = results.prefix(state.cardShortcutCount).map(\.id)
+        let cardWidth = state.cardWidth
         return ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
+                LazyHStack(spacing: PanelMetrics.cardSpacing) {
                     ForEach(results) { item in
                         ClipCardView(
                             item: item,
                             image: ThumbnailCache.image(for: item, store: store),
                             isSelected: item.id == selectedCardID,
-                            tagColor: tagColor(for: item)
+                            tagColor: tagColor(for: item),
+                            shortcut: shortcutIDs.firstIndex(of: item.id).flatMap(CardShortcuts.label(position:)),
+                            width: cardWidth
                         )
                         .id(item.id)
                         .onTapGesture(count: 2) {
@@ -151,13 +156,17 @@ struct HistoryView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 4)
             }
+            // Margins of the scroll and not padding of the row: a scroll that only goes as far as a card needs
+            // keeps them, where it would leave the card against the edge with its border cut.
+            .contentMargins(.horizontal, PanelMetrics.rowInset, for: .scrollContent)
             // The card shown as selected, not `selectedID`: nil (after reopening, a tab switch or a search) and a
             // removed or expired item fall back to the first card, which must then be scrolled into view too.
             .onChange(of: selectedCardID) { _, newID in
                 withAnimation {
-                    proxy.scrollTo(newID, anchor: .center)
+                    // No anchor: only as far as it takes to show the card. Centring it would move the strip while
+                    // the selection is among the cards on screen, and leave the first ones cut at the edge.
+                    proxy.scrollTo(newID)
                 }
             }
             // The panel keeps its scroll offset while hidden; on every show the selected card must be on screen

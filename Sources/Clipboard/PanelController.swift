@@ -30,6 +30,18 @@ final class PanelState {
     /// Active tab. Reset to .history every time the panel opens.
     var scope: HistoryStore.Scope = .history
 
+    /// Set on every show, from the screen the strip opens on.
+    var cardWidth = PanelMetrics.minCardWidth
+    /// How many cards, from the first, show a shortcut (see `CardShortcuts`).
+    var cardShortcutCount = 0
+
+    /// Whether a card that is still drawn has expired. `results(in:)` leaves expired items out, but the strip only
+    /// draws again when something it observes changes, and the passing of time is not one of those things.
+    func hasExpiredCard(in store: HistoryStore) -> Bool {
+        let now = Date()
+        return store.search(query, in: effectiveScope(in: store)).contains { $0.isExpired(at: now) }
+    }
+
     /// Falls back to the history tab if the active tag was deleted.
     /// Expired items are left out: the store only purges them every 30 s.
     func results(in store: HistoryStore) -> [ClipItem] {
@@ -132,7 +144,12 @@ final class KeyablePanel: NSPanel {
 
 @MainActor
 final class PanelController: NSObject, NSWindowDelegate {
-    private static let height: CGFloat = 300
+    /// The digit of each key of the number row. By key and not by character, unlike ⌘T below: the digits keep
+    /// their place on every layout, and on AZERTY those keys type "&", "é"… unless ⇧ is held.
+    private static let digitsByKeyCode = [
+        kVK_ANSI_0: 0, kVK_ANSI_1: 1, kVK_ANSI_2: 2, kVK_ANSI_3: 3, kVK_ANSI_4: 4,
+        kVK_ANSI_5: 5, kVK_ANSI_6: 6, kVK_ANSI_7: 7, kVK_ANSI_8: 8, kVK_ANSI_9: 9,
+    ]
     private static let margin: CGFloat = 8
 
     private let store: HistoryStore
@@ -185,6 +202,9 @@ final class PanelController: NSObject, NSWindowDelegate {
             // recorded on an earlier show would receive the paste unseen. The item is only copied.
             previousApp = nil
         }
+        // The strip opens with nothing expired in the store, so that `redrawIfAnyCardExpired` only finds what
+        // expires while it is open.
+        store.purgeExpired()
         state.query = ""
         state.selectedID = nil
         state.scope = .history
@@ -196,12 +216,20 @@ final class PanelController: NSObject, NSWindowDelegate {
         guard let visible = screen?.visibleFrame else {
             return
         }
+        let stripWidth = visible.width - 2 * Self.margin
+        let layout = StripLayout(
+            width: PanelMetrics.cardRowWidth(stripWidth: stripWidth),
+            minCardWidth: PanelMetrics.minCardWidth,
+            spacing: PanelMetrics.cardSpacing
+        )
+        state.cardWidth = layout.cardWidth
+        state.cardShortcutCount = CardShortcuts.count(cardsThatFit: layout.cardCount)
         panel.setFrame(
             NSRect(
                 x: visible.minX + Self.margin,
                 y: visible.minY + Self.margin,
-                width: visible.width - 2 * Self.margin,
-                height: Self.height
+                width: stripWidth,
+                height: PanelMetrics.stripHeight
             ),
             display: true
         )
@@ -278,12 +306,24 @@ final class PanelController: NSObject, NSWindowDelegate {
             default:
                 break
             }
+            if let digit = Self.digitsByKeyCode[Int(event.keyCode)],
+               let position = CardShortcuts.position(digit: digit) {
+                let results = state.results(in: store)
+                // Only the cards that show the shortcut: the others may be off the screen. The key is taken
+                // either way, so a digit with no card does not reach the search field.
+                if !redrawIfAnyCardExpired(), position < state.cardShortcutCount, results.indices.contains(position) {
+                    pick(results[position])
+                }
+                return true
+            }
             // By character, like the edit shortcuts: on Dvorak the key at kVK_ANSI_T does not type "t". A layout
             // with no Latin letters (Russian, Greek) types no "t" at all, so there the physical key still counts.
             let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
             let isLatin = key.unicodeScalars.allSatisfy(\.isASCII)
             if key == "t" || (!isLatin && Int(event.keyCode) == kVK_ANSI_T) {
-                openTagPicker()
+                if !redrawIfAnyCardExpired() {
+                    openTagPicker()
+                }
                 return true
             }
         }
@@ -301,11 +341,11 @@ final class PanelController: NSObject, NSWindowDelegate {
                 state.selectedID = results[index + 1].id
             }
         case kVK_Return, kVK_ANSI_KeypadEnter:
-            if results.indices.contains(index) {
+            if !redrawIfAnyCardExpired(), results.indices.contains(index) {
                 pick(results[index])
             }
         case kVK_Delete where event.modifierFlags.contains(.command):
-            if results.indices.contains(index) {
+            if !redrawIfAnyCardExpired(), results.indices.contains(index) {
                 store.remove(id: results[index].id)
                 // The list already in hand minus the removed item, instead of searching again.
                 var remaining = results
@@ -317,6 +357,17 @@ final class PanelController: NSObject, NSWindowDelegate {
         default:
             return sendEditShortcut(event)
         }
+        return true
+    }
+
+    /// Called before a key acts on a card by its position. With an expired card still drawn (see
+    /// `PanelState.hasExpiredCard`) the key would act on the neighbour of the card it shows: this purges instead,
+    /// which draws the strip again, and returns true, so the key does nothing this time.
+    private func redrawIfAnyCardExpired() -> Bool {
+        guard state.hasExpiredCard(in: store) else {
+            return false
+        }
+        store.purgeExpired()
         return true
     }
 
