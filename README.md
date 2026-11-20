@@ -49,7 +49,8 @@ Code Signing).
 `⌘⌫` delete · `Esc` close · `⌘←` `⌘→` switch tab · `⌘T` tag · right-click a card or a tab for more options.
 
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open): open at login. With the Settings window in front,
-an item picked from the history is only copied.
+an item picked from the history is only copied. "About SimpleClipboard" shows the version, the author and a link to
+this repository.
 
 ## Data
 

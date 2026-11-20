@@ -42,6 +42,9 @@ public enum Config {
     /// which only near-flat images reach, and those are never this large (a 6K screen capture is about 80 MB).
     public static let maxTIFFBytes = 16 * maxImageBytes
 
+    /// Shown in the About window.
+    public static let authorName = "Marcos Fernández"
+    public static let repositoryURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard")!
     /// Built here, never taken from the response: the menu item only ever opens this page.
     public static let releasesPageURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard/releases/latest")!
     public static let latestReleaseAPIURL = URL(

@@ -2,28 +2,9 @@ import AppKit
 import ClipboardCore
 import SwiftUI
 
-/// The app has no main menu, so ⌘W and Esc never close the window on their own.
-final class SettingsWindow: NSWindow {
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        // Caps Lock is a device-independent flag too; drop it so "only ⌘" compares cleanly.
-        let modifiers = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting(.capsLock)
-        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "w" {
-            performClose(nil)
-            return true
-        }
-        return super.performKeyEquivalent(with: event)
-    }
-
-    override func cancelOperation(_ sender: Any?) {
-        performClose(nil)
-    }
-}
-
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
-    private let window: SettingsWindow
+    private let window: ClosableWindow
     private let onBecomeKey: @MainActor () -> Void
 
     /// `onBecomeKey`: called whenever the window opens or comes back to the front, to refresh what it shows.
@@ -32,7 +13,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         onBecomeKey: @escaping @MainActor () -> Void
     ) {
         self.onBecomeKey = onBecomeKey
-        window = SettingsWindow(
+        window = ClosableWindow(
             contentRect: .zero,
             styleMask: [.titled, .closable],
             backing: .buffered,

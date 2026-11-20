@@ -38,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Whether the user was in the settings window before the first alert of the action under way; nil while the
     /// action has shown none.
     private var wasInSettingsBeforeAlert: Bool?
+    /// Built the first time it is opened.
+    private lazy var about = AboutWindowController()
 
     private var sync: SyncService!
     private var syncStatus: SyncStatus = .off
@@ -234,6 +236,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         syncInfoItem.isEnabled = false
         menu.addItem(syncInfoItem)
         menu.addItem(.separator())
+        let aboutItem = NSMenuItem(title: "About \(Config.appName)", action: #selector(openAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -249,6 +254,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openHistory() {
         panel.show()
+    }
+
+    @objc private func openAbout() {
+        about.show()
     }
 
     @objc private func openSettings() {
