@@ -29,7 +29,9 @@ struct SettingsView: View {
             Section("General") {
                 Toggle(
                     "Open at Login",
-                    isOn: Binding(get: { state.opensAtLogin }, set: actions.setOpensAtLogin)
+                    // Called in a closure, not passed as a value: Swift 6.3 (the one that builds the releases) crashes
+                    // converting a @MainActor function to the plain one a Binding takes.
+                    isOn: Binding(get: { state.opensAtLogin }, set: { actions.setOpensAtLogin($0) })
                 )
             }
             Section("Paste Items") {
