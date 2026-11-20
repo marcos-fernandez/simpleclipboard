@@ -42,6 +42,11 @@ public enum Config {
     /// which only near-flat images reach, and those are never this large (a 6K screen capture is about 80 MB).
     public static let maxTIFFBytes = 16 * maxImageBytes
 
+    /// System Settings > Privacy & Security > Accessibility.
+    public static let accessibilitySettingsURL = URL(
+        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+    )!
+
     /// Shown in the About window.
     public static let authorName = "Marcos Fernández"
     public static let repositoryURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard")!

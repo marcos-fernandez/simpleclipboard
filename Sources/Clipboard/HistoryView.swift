@@ -1,6 +1,19 @@
 import ClipboardCore
 import SwiftUI
 
+/// The focus ring of the search field: the band between a capsule and a smaller one inside it, to be filled with
+/// the even-odd rule. Filled and not stroked: the stroke of a capsule is drawn with a mark at each end.
+private struct SearchFocusRing: Shape {
+    private static let lineWidth: CGFloat = 2
+
+    func path(in rect: CGRect) -> Path {
+        let inner = rect.insetBy(dx: Self.lineWidth, dy: Self.lineWidth)
+        var path = Path(roundedRect: rect, cornerRadius: rect.height / 2)
+        path.addRoundedRect(in: inner, cornerSize: CGSize(width: inner.height / 2, height: inner.height / 2))
+        return path
+    }
+}
+
 struct HistoryView: View {
     let store: HistoryStore
     @Bindable var state: PanelState
@@ -12,12 +25,38 @@ struct HistoryView: View {
         let results = state.results(in: store)
         let selectedIndex = state.selectedIndex(in: results)
         VStack(spacing: 12) {
-            TabBarView(store: store, state: state)
-
-            TextField("Search history", text: $state.query)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 420)
-                .focused($searchFocused)
+            // One row, centred: the search field keeps its width and the tabs take what they need.
+            HStack(spacing: 12) {
+                // Drawn here: taller and rounder than the system's bordered field, like the search of System Settings.
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("Search", text: $state.query)
+                        .textFieldStyle(.plain)
+                        .focused($searchFocused)
+                    if !state.query.isEmpty {
+                        Button {
+                            state.query = ""
+                            searchFocused = true
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Clear")
+                    }
+                }
+                .padding(.horizontal, 10)
+                .frame(width: 280, height: 30)
+                .background(Color.primary.opacity(0.08), in: Capsule())
+                .overlay {
+                    if searchFocused {
+                        SearchFocusRing()
+                            .fill(Color(nsColor: .keyboardFocusIndicatorColor), style: FillStyle(eoFill: true))
+                    }
+                }
+                TabBarView(store: store, state: state)
+            }
 
             if results.isEmpty {
                 Text(emptyMessage)
