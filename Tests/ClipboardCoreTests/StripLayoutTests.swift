@@ -53,4 +53,45 @@ struct StripLayoutTests {
         #expect(layout.cardCount == 1)
         #expect(layout.cardWidth == 100)
     }
+
+    // MARK: the first card in view
+
+    @Test(arguments: [0, 3, 5])
+    func stripStaysStillWhileTheSelectionIsInView(selected: Int) {
+        #expect(StripLayout.leadingCard(current: 0, selected: selected, cardCount: 6) == 0)
+        #expect(StripLayout.leadingCard(current: 4, selected: selected + 4, cardCount: 6) == 4)
+    }
+
+    @Test func selectionPastTheLastCardInViewBecomesTheLastOne() {
+        #expect(StripLayout.leadingCard(current: 0, selected: 6, cardCount: 6) == 1)
+        #expect(StripLayout.leadingCard(current: 0, selected: 20, cardCount: 6) == 15)
+    }
+
+    @Test func selectionBeforeTheFirstCardInViewBecomesTheFirstOne() {
+        #expect(StripLayout.leadingCard(current: 4, selected: 3, cardCount: 6) == 3)
+        #expect(StripLayout.leadingCard(current: 15, selected: 0, cardCount: 6) == 0)
+    }
+
+    @Test func stripThatShowsNoCardStillFollowsTheSelection() {
+        #expect(StripLayout.leadingCard(current: 0, selected: 2, cardCount: 0) == 2)
+    }
+
+    @Test func stripOfOneCardMovesWithEverySelection() {
+        #expect(StripLayout.leadingCard(current: 3, selected: 4, cardCount: 1) == 4)
+        #expect(StripLayout.leadingCard(current: 3, selected: 2, cardCount: 1) == 2)
+    }
+
+    @Test func cardsThatFillTheEndOfTheStripCannotBeFirstInView() {
+        // 8 cards, 6 in view: the strip stops with the third card first, so a shortcut counted from a later one
+        // would leave the first cards in view without theirs.
+        #expect(StripLayout.reachableLeadingCard(2, itemCount: 8, cardCount: 6) == 2)
+        #expect(StripLayout.reachableLeadingCard(3, itemCount: 8, cardCount: 6) == 2)
+        #expect(StripLayout.reachableLeadingCard(7, itemCount: 8, cardCount: 6) == 2)
+    }
+
+    @Test func listThatFitsInViewAlwaysStartsAtItsFirstCard() {
+        #expect(StripLayout.reachableLeadingCard(3, itemCount: 4, cardCount: 6) == 0)
+        #expect(StripLayout.reachableLeadingCard(0, itemCount: 0, cardCount: 6) == 0)
+        #expect(StripLayout.reachableLeadingCard(-1, itemCount: 8, cardCount: 6) == 0)
+    }
 }

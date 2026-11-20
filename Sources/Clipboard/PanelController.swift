@@ -32,8 +32,36 @@ final class PanelState {
 
     /// Set on every show, from the screen the strip opens on.
     var cardWidth = PanelMetrics.minCardWidth
-    /// How many cards, from the first, show a shortcut (see `CardShortcuts`).
+    /// How many cards fit in view, and how many of them, from the first in view, show a shortcut (see
+    /// `CardShortcuts`).
+    var cardCount = 1
     var cardShortcutCount = 0
+    /// The first card in view: written by the strip as it scrolls, and set to scroll it. nil while the strip has
+    /// never been moved, which leaves it at its first card.
+    var leadingCardID: UUID?
+
+    /// The position in `results` of the first card in view. nil when that card is no longer there (expired, purged,
+    /// deleted from another Mac): the strip stays where it was, so counting from any other card would put the
+    /// shortcuts on cards that are off the screen.
+    func leadingIndex(in results: [ClipItem]) -> Int? {
+        guard let leadingCardID else {
+            return results.isEmpty
+                ? nil
+                : 0
+        }
+        return results.firstIndex { $0.id == leadingCardID }
+    }
+
+    /// Scrolls the strip so that the card at `index` is the first in view, or the nearest one that can be: the
+    /// strip keeps the id it is given even when it cannot bring that card to its edge.
+    func showFirst(_ index: Int, of results: [ClipItem]) {
+        guard !results.isEmpty else {
+            leadingCardID = nil
+            return
+        }
+        let reachable = StripLayout.reachableLeadingCard(index, itemCount: results.count, cardCount: cardCount)
+        leadingCardID = results[reachable].id
+    }
 
     /// Whether a card that is still drawn has expired. `results(in:)` leaves expired items out, but the strip only
     /// draws again when something it observes changes, and the passing of time is not one of those things.
@@ -222,8 +250,12 @@ final class PanelController: NSObject, NSWindowDelegate {
             minCardWidth: PanelMetrics.minCardWidth,
             spacing: PanelMetrics.cardSpacing
         )
+        state.cardCount = layout.cardCount
         state.cardWidth = layout.cardWidth
         state.cardShortcutCount = CardShortcuts.count(cardsThatFit: layout.cardCount)
+        // Here and not only when the view draws again: a ⌘ digit typed right after the hotkey is handled before
+        // that, and would count from the card left first in view the last time.
+        state.showFirst(0, of: state.results(in: store))
         panel.setFrame(
             NSRect(
                 x: visible.minX + Self.margin,
@@ -309,10 +341,12 @@ final class PanelController: NSObject, NSWindowDelegate {
             if let digit = Self.digitsByKeyCode[Int(event.keyCode)],
                let position = CardShortcuts.position(digit: digit) {
                 let results = state.results(in: store)
-                // Only the cards that show the shortcut: the others may be off the screen. The key is taken
-                // either way, so a digit with no card does not reach the search field.
-                if !redrawIfAnyCardExpired(), position < state.cardShortcutCount, results.indices.contains(position) {
-                    pick(results[position])
+                // Counted from the first card in view, and only the cards that show the shortcut: the others are
+                // off the screen. The key is taken either way, so a digit with no card does not reach the search
+                // field.
+                if !redrawIfAnyCardExpired(), position < state.cardShortcutCount,
+                   let leading = state.leadingIndex(in: results), results.indices.contains(leading + position) {
+                    pick(results[leading + position])
                 }
                 return true
             }
@@ -350,6 +384,11 @@ final class PanelController: NSObject, NSWindowDelegate {
                 // The list already in hand minus the removed item, instead of searching again.
                 var remaining = results
                 remaining.remove(at: index)
+                // The card that takes its place becomes the first in view: the removed one would leave the cards
+                // without shortcuts until the strip is drawn again.
+                if state.leadingCardID == results[index].id {
+                    state.showFirst(index, of: remaining)
+                }
                 state.selectedID = remaining.isEmpty
                     ? nil
                     : remaining[min(index, remaining.count - 1)].id
@@ -428,6 +467,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
         state.scope = scopes[next]
         state.selectedID = nil
+        // As in `show()`: before a ⌘ digit typed right after the tab switch.
+        state.showFirst(0, of: state.results(in: store))
     }
 
     /// The app has no main menu, so ⌘V/⌘C/⌘X/⌘A/⌘Z never reach the search field on their own.
