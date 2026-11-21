@@ -36,6 +36,21 @@ struct PasteboardClassifierTests {
         #expect(PasteboardClassifier.classify(types: plainText, sourceBundleID: "com.apple.keychainaccess") == .ignore)
     }
 
+    @Test func appsOfTheGivenListAreIgnoredInsteadOfTheDefaultOnes() {
+        // The list of the settings: an app added to it is ignored, and one removed from it is recorded again.
+        let ignored: Set<String> = ["com.apple.Notes"]
+        #expect(PasteboardClassifier.classify(
+            types: plainText, sourceBundleID: "com.apple.Notes", ignoredSourceBundleIDs: ignored
+        ) == .ignore)
+        #expect(PasteboardClassifier.classify(
+            types: plainText, sourceBundleID: "com.apple.Safari", recentSourceBundleIDs: ["com.apple.Notes"],
+            ignoredSourceBundleIDs: ignored
+        ) == .ignore)
+        #expect(PasteboardClassifier.classify(
+            types: plainText, sourceBundleID: "com.apple.keychainaccess", ignoredSourceBundleIDs: ignored
+        ) == .normal)
+    }
+
     @Test func ownPasteMarkerIsIgnoredSoPastesAreNotReRecorded() {
         let types = plainText.union([Config.ownMarkerType])
         #expect(PasteboardClassifier.classify(types: types, sourceBundleID: nil) == .ignore)

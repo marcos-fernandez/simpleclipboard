@@ -14,8 +14,12 @@ final class ClipboardMonitor {
     private var timer: Timer?
     /// Apps that lost focus since the previous poll (e.g. 1Password handing focus back to the browser).
     private var recentlyDeactivated: Set<String> = []
+    private let ignoredSourceBundleIDs: @MainActor () -> Set<String>
 
-    init(store: HistoryStore) {
+    /// `ignoredSourceBundleIDs`: the apps nothing is copied from. Asked at every copy, so a change in the settings
+    /// counts from the next one.
+    init(store: HistoryStore, ignoredSourceBundleIDs: @escaping @MainActor () -> Set<String>) {
+        self.ignoredSourceBundleIDs = ignoredSourceBundleIDs
         captures = CaptureQueue(store: store) { tiff in
             NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
         }
@@ -60,7 +64,8 @@ final class ClipboardMonitor {
         let classification = PasteboardClassifier.classify(
             types: types,
             sourceBundleID: frontApp?.bundleIdentifier,
-            recentSourceBundleIDs: recentSourceBundleIDs
+            recentSourceBundleIDs: recentSourceBundleIDs,
+            ignoredSourceBundleIDs: ignoredSourceBundleIDs()
         )
         guard classification != .ignore, let capture = readCapture() else {
             return

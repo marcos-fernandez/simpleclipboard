@@ -1,9 +1,35 @@
 import AppKit
+import Carbon.HIToolbox
 import ClipboardCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The app has no main menu, so ⌘W and Esc never close the window on their own.
 final class SettingsWindow: NSWindow {
+    /// Called with -1 or 1 when ↑ or ↓ reaches the window, that is, when nothing in it (a list, a text field) took
+    /// the key: the rows of the sidebar are drawn by hand and the keyboard would not reach them otherwise.
+    var onMoveSelection: ((Int) -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        // The arrows alone: with ⌘ or ⌥ they mean "to the end" or "by a page" in a list, not the next pane. Arrow
+        // keys carry .numericPad and .function themselves.
+        let modifiers = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .function, .numericPad])
+        guard modifiers.isEmpty else {
+            super.keyDown(with: event)
+            return
+        }
+        switch Int(event.keyCode) {
+        case kVK_UpArrow:
+            onMoveSelection?(-1)
+        case kVK_DownArrow:
+            onMoveSelection?(1)
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         // Caps Lock is a device-independent flag too; drop it so "only ⌘" compares cleanly.
         let modifiers = event.modifierFlags
@@ -33,23 +59,29 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         self.onBecomeKey = onBecomeKey
         window = SettingsWindow(
             contentRect: .zero,
-            styleMask: [.titled, .closable],
+            // The sidebar runs under the title bar, as in System Settings.
+            styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: true
         )
         super.init()
 
         window.delegate = self
-        // The app has no Dock icon and no menu bar of its own: the title is what says whose window this is.
-        window.title = Config.appName
         // Kept for the next time it is opened.
         window.isReleasedWhenClosed = false
-        // One standard background for the page and the title bar, so the boxes of the form stand out.
-        window.backgroundColor = .controlBackgroundColor
+        // Not on show: it would sit across the sidebar and the pane, above the header that already names the pane.
+        // It is still what Mission Control and VoiceOver say (see `SettingsPane.windowTitle`).
+        window.title = state.pane.windowTitle
+        window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.contentViewController = NSHostingController(
-            rootView: SettingsView(state: state, actions: actions)
+            rootView: SettingsView(state: state, actions: actions) { [window] pane in
+                window.title = pane.windowTitle
+            }
         )
+        window.onMoveSelection = { offset in
+            state.movePane(by: offset)
+        }
     }
 
     func show() {
@@ -60,6 +92,21 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
         AppActivation.activate()
         window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Asks for apps on a sheet of the window; `completion` is not called when the user cancels.
+    func chooseApps(completion: @escaping @MainActor ([URL]) -> Void) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = "Add"
+        panel.beginSheetModal(for: window) { response in
+            if response == .OK {
+                completion(panel.urls)
+            }
+        }
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
