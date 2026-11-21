@@ -14,10 +14,34 @@ private struct SearchFocusRing: Shape {
     }
 }
 
+/// Holds the AppKit view under the wrench, which AppKit needs to open a menu from. Owned by `PanelController` and
+/// not by the view: this toolchain has no SwiftUI macros, so no `@State`.
+@MainActor
+final class MenuAnchor {
+    weak var view: NSView?
+}
+
+/// An empty AppKit view, put behind the wrench so its frame is the wrench's.
+private struct MenuAnchorView: NSViewRepresentable {
+    let anchor: MenuAnchor
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        anchor.view = view
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 struct HistoryView: View {
     let store: HistoryStore
     @Bindable var state: PanelState
     let onPick: (ClipItem) -> Void
+    /// Filled with the view behind the wrench, for `onShowMenu` to open the menu from.
+    let menuAnchor: MenuAnchor
+    /// Opens the menu of the menu-bar item from the wrench.
+    let onShowMenu: () -> Void
 
     @FocusState private var searchFocused: Bool
 
@@ -27,6 +51,9 @@ struct HistoryView: View {
         VStack(spacing: PanelMetrics.stripSpacing) {
             // One row, centred: the search field keeps its width and the tabs take what they need.
             HStack(spacing: 12) {
+                if state.showsMenuButton {
+                    menuButton
+                }
                 // Drawn here: taller and rounder than the system's bordered field, like the search of System Settings.
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
@@ -90,6 +117,28 @@ struct HistoryView: View {
         .onChange(of: state.focusRequest) {
             searchFocused = true
         }
+    }
+
+    /// Opens the menu of the menu-bar item while that item is hidden. Round and as tall as the search field, with the
+    /// same background, so the two read as one row of controls.
+    private var menuButton: some View {
+        let symbolColor = state.isUpdateAvailable
+            ? Color(nsColor: .systemOrange)
+            : Color.secondary
+        let label = state.isUpdateAvailable
+            ? "\(Config.appName) Menu, update available"
+            : "\(Config.appName) Menu"
+        return Button(action: onShowMenu) {
+            Image(systemName: "wrench.adjustable")
+                .foregroundStyle(symbolColor)
+                .frame(width: PanelMetrics.searchRowHeight, height: PanelMetrics.searchRowHeight)
+                .background(Color.primary.opacity(0.08), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .background(MenuAnchorView(anchor: menuAnchor))
+        .help(label)
+        .accessibilityLabel(label)
     }
 
     /// Another search or tab is another list: nothing selected, and the strip back at its first card.

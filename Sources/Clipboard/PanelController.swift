@@ -29,6 +29,11 @@ final class PanelState {
     var focusRequest = 0
     /// Active tab. Reset to .history every time the panel opens.
     var scope: HistoryStore.Scope = .history
+    /// Whether the wrench next to the search field is shown: only while the menu-bar item, whose menu it opens, is
+    /// hidden.
+    var showsMenuButton = false
+    /// Drawn on the wrench as on the menu-bar item, which is not there to show it.
+    var isUpdateAvailable = false
 
     /// Set on every show, from the screen the strip opens on.
     var cardWidth = PanelMetrics.minCardWidth
@@ -179,6 +184,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         kVK_ANSI_5: 5, kVK_ANSI_6: 6, kVK_ANSI_7: 7, kVK_ANSI_8: 8, kVK_ANSI_9: 9,
     ]
     private static let margin: CGFloat = 8
+    /// Between the wrench and the menu it opens.
+    private static let menuGap: CGFloat = 4
 
     private let store: HistoryStore
     private let state = PanelState()
@@ -186,6 +193,20 @@ final class PanelController: NSObject, NSWindowDelegate {
     private let onPick: (ClipItem, NSRunningApplication?) -> Void
     private var keyMonitor: Any?
     private var previousApp: NSRunningApplication?
+    private let menuAnchor = MenuAnchor()
+
+    /// The menu of the menu-bar item, opened from the wrench while that item is hidden.
+    var menu: NSMenu?
+
+    var showsMenuButton: Bool {
+        get { state.showsMenuButton }
+        set { state.showsMenuButton = newValue }
+    }
+
+    var isUpdateAvailable: Bool {
+        get { state.isUpdateAvailable }
+        set { state.isUpdateAvailable = newValue }
+    }
 
     init(store: HistoryStore, onPick: @escaping (ClipItem, NSRunningApplication?) -> Void) {
         self.store = store
@@ -207,9 +228,17 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.hidesOnDeactivate = false
         panel.delegate = self
         panel.contentView = NSHostingView(
-            rootView: HistoryView(store: store, state: state) { [weak self] item in
-                self?.pick(item)
-            }
+            rootView: HistoryView(
+                store: store,
+                state: state,
+                onPick: { [weak self] item in
+                    self?.pick(item)
+                },
+                menuAnchor: menuAnchor,
+                onShowMenu: { [weak self] in
+                    self?.showMenu()
+                }
+            )
         )
     }
 
@@ -287,6 +316,26 @@ final class PanelController: NSObject, NSWindowDelegate {
         let target = previousApp
         hide()
         onPick(item, target)
+    }
+
+    /// Opens `menu` above the wrench: the strip sits at the bottom of the screen, with no room under it.
+    private func showMenu() {
+        guard let menu, let anchor = menuAnchor.view else {
+            return
+        }
+        // Brought up to date before it is measured: the lines it shows (backup, sync) change its height.
+        menu.delegate?.menuNeedsUpdate?(menu)
+        let top = anchor.isFlipped
+            ? -Self.menuGap - menu.size.height
+            : anchor.bounds.maxY + Self.menuGap + menu.size.height
+        // The monitor would take the arrows and Return meant for the menu while it is open.
+        removeKeyMonitor()
+        // Returns once the menu has closed and its item, if one was chosen, has run.
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: top), in: anchor)
+        // An item that brings up an alert or the settings window hides the strip, which takes the monitor with it.
+        if panel.isVisible {
+            installKeyMonitor()
+        }
     }
 
     private func installKeyMonitor() {

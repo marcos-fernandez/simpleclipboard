@@ -20,7 +20,8 @@ memory only and disappears after 10 minutes.
 3. Grant the Accessibility permission when asked (see Permissions).
 
 The app checks GitHub for a new release shortly after launch and then once a day. When there is one, the menu-bar
-icon changes and the menu shows "Update Available", which opens the release page; nothing is downloaded or installed.
+icon (or the wrench, when it is hidden) changes and the menu shows "Update Available", which opens the release page;
+nothing is downloaded or installed.
 This is the only network request the app makes, and nothing from the clipboard is sent.
 
 ## Build and install
@@ -54,7 +55,9 @@ right-click a card or a tab for more options.
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open) opens a window with a pane per row of its sidebar
 (`↑` `↓` change pane):
 
-- **General**: open at login, and what happens when an item is picked: "Paste Directly" (the default) or "Copy to
+- **General**: open at login; "Show in Menu Bar", which hides the menu-bar icon when off: its menu then opens from a
+  wrench to the left of the search field of the history (`⇧⌘V`). If `⇧⌘V` cannot be registered the icon stays, as
+  nothing else would open the app. And what happens when an item is picked: "Paste Directly" (the default) or "Copy to
   Clipboard", which leaves the pasting to you.
 - **Privacy**: "Never Copy From", the apps whose copies are not kept in the history. Keychain Access is there from
   the start; `+` adds apps and `−` removes the selected one, Keychain Access too.

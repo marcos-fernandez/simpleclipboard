@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var panel: PanelController!
     private var hotkey: HotkeyManager!
     private var statusItem: NSStatusItem!
+    private var hotkeyRegistered = false
     private var purgeTimer: Timer?
 
     private static let lastBackupKey = "lastBackupDate"
@@ -34,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let ignoredAppsKey = "ignoredSourceBundleIDs"
     private static let loginItemRegisteredKey = "loginItemRegistered"
     private static let pickActionKey = "pickAction"
+    private static let showsMenuBarIconKey = "showsMenuBarIcon"
 
     private let settingsState = SettingsState()
     private var settings: SettingsWindowController!
@@ -69,6 +71,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var pickAction: PickAction {
         PickAction(stored: UserDefaults.standard.string(forKey: Self.pickActionKey))
+    }
+
+    /// The saved setting, not whether the item is on show (see `MenuBarIcon`).
+    private var showsMenuBarIcon: Bool {
+        UserDefaults.standard.object(forKey: Self.showsMenuBarIconKey) as? Bool ?? true
     }
 
     private var lastBackupDate: Date? {
@@ -174,7 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hotkey = HotkeyManager { [weak self] in
             self?.panel.toggle()
         }
-        let hotkeyRegistered = hotkey.register()
+        hotkeyRegistered = hotkey.register()
         if !hotkeyRegistered {
             Self.logger.error("Cannot register ⇧⌘V")
         }
@@ -196,13 +203,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 },
                 setPickAction: { [weak self] action in
                     self?.setPickAction(action)
+                },
+                setShowsMenuBarIcon: { [weak self] isOn in
+                    self?.setShowsMenuBarIcon(isOn)
                 }
             ),
             onBecomeKey: { [weak self] in
                 self?.refreshSettings()
             }
         )
-        setUpStatusItem(hotkeyRegistered: hotkeyRegistered)
+        setUpStatusItem()
         startUpdateChecks()
         registerLoginItem()
         // Only pasting needs the permission: set to copy, the app does not ask for it at launch.
@@ -218,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Paster.clearConcealedValue()
     }
 
-    private func setUpStatusItem(hotkeyRegistered: Bool) {
+    private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: Config.appName)
 
@@ -273,6 +283,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshBackupItems()
         refreshSyncItems()
         statusItem.menu = menu
+        panel.menu = menu
+        applyMenuBarIconSetting()
+    }
+
+    /// Shows or hides the menu-bar item, and the wrench of the history that stands in for it.
+    private func applyMenuBarIconSetting() {
+        let isShown = MenuBarIcon.isShown(stored: showsMenuBarIcon, hotkeyRegistered: hotkeyRegistered)
+        // Hidden, not removed: it comes back in the place the user gave it in the menu bar.
+        statusItem.isVisible = isShown
+        panel.showsMenuButton = !isShown
+    }
+
+    private func setShowsMenuBarIcon(_ isOn: Bool) {
+        UserDefaults.standard.set(isOn, forKey: Self.showsMenuBarIconKey)
+        applyMenuBarIconSetting()
+        refreshSettings()
     }
 
     @objc private func openHistory() {
@@ -372,6 +398,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateItem.title = availableUpdate
             .map { "Update Available: \($0)…" }
             ?? ""
+        panel.isUpdateAvailable = availableUpdate != nil
         // Set here and not in menuNeedsUpdate: the icon has to change without the menu being opened.
         let plainIcon = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: Config.appName)
         // Falls back to the plain icon: a symbol missing on this macOS would leave the menu-bar item invisible.
@@ -681,6 +708,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsState.opensAtLogin = SMAppService.mainApp.status == .enabled
         settingsState.pickAction = pickAction
         settingsState.isAccessibilityGranted = AXIsProcessTrusted()
+        settingsState.showsMenuBarIcon = showsMenuBarIcon
     }
 
     private func addIgnoredApps() {
