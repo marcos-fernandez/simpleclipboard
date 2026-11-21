@@ -12,8 +12,9 @@ memory only and disappears after 10 minutes.
 
 ## Install
 
-1. Download `SimpleClipboard.zip` from the [latest release](../../releases/latest) (one build for Apple Silicon and
-   Intel), unzip it and drag `SimpleClipboard.app` to Applications.
+1. Download the `.dmg` from the [latest release](../../releases/latest) (`universal`: one build for Apple Silicon
+   and Intel), open it and drag `SimpleClipboard.app` to Applications. Do not run it from the disk image: the
+   permission and "Open at Login" would point to a volume that is gone once ejected.
 2. Open it. The app is not notarized by Apple, so macOS refuses the first time: go to System Settings > Privacy &
    Security and click "Open Anyway" (or run `xattr -dr com.apple.quarantine /Applications/SimpleClipboard.app`).
 3. Grant the Accessibility permission when asked (see Permissions).

@@ -1,4 +1,4 @@
-# Publishes SimpleClipboard.zip (Apple Silicon + Intel) as a GitHub release:
+# Publishes a disk image like SimpleClipboard-1.7.0-universal.dmg (Apple Silicon + Intel) as a GitHub release:
 # - on every push to main (a merged pull request): the next minor version, v1.2.0 after v1.1.0;
 # - when a tag like v2.0.0 is pushed by hand: that version, which is how a major one is made.
 name: Release
@@ -83,7 +83,7 @@ jobs:
           # build-app.sh falls back to ad-hoc signing when the certificate is missing: a release must not.
           codesign -d -r- build/SimpleClipboard.app 2>&1 | grep "certificate" >/dev/null
           lipo -archs build/SimpleClipboard.app/Contents/MacOS/SimpleClipboard
-          ditto -c -k --keepParent build/SimpleClipboard.app SimpleClipboard.zip
+          scripts/package-dmg.sh
 
       # From main the tag does not exist yet: it is created on the commit that was built.
       - name: Publish
@@ -91,4 +91,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
-        run: gh release create "${TAG}" SimpleClipboard.zip --target "${GITHUB_SHA}" --generate-notes
+        run: |
+          set -euo pipefail
+          # package-dmg.sh names the disk image after what the build is: one that is not universal has another
+          # name, and this fails instead of publishing it as if it were.
+          dmg="build/SimpleClipboard-${TAG#v}-universal.dmg"
+          info_plist="build/SimpleClipboard.app/Contents/Info.plist"
+          min_os="$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "${info_plist}")"
+          # Above the notes that GitHub writes from the merged pull requests.
+          gh release create "${TAG}" "${dmg}" --target "${GITHUB_SHA}" --generate-notes \
+            --notes "Universal build: runs on Apple Silicon and Intel. Needs macOS ${min_os%.0} or later."
