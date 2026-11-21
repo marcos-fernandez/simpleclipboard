@@ -15,6 +15,8 @@ final class ClipboardMonitor {
     /// Apps that lost focus since the previous poll (e.g. 1Password handing focus back to the browser).
     private var recentlyDeactivated: Set<String> = []
     private let ignoredSourceBundleIDs: @MainActor () -> Set<String>
+    /// Whether recording is stopped ("Pause" in the menu). Asked at every copy; nil is never.
+    var isPaused: (@MainActor () -> Bool)?
 
     /// `ignoredSourceBundleIDs`: the apps nothing is copied from. Asked at every copy, so a change in the settings
     /// counts from the next one.
@@ -58,6 +60,10 @@ final class ClipboardMonitor {
             return
         }
         lastChangeCount = changeCount
+        // After the count is taken: a copy made while paused is passed over for good, not read when the pause ends.
+        guard isPaused?() != true else {
+            return
+        }
 
         let types = Set((pasteboard.types ?? []).map(\.rawValue))
         let frontApp = NSWorkspace.shared.frontmostApplication

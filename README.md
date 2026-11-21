@@ -17,11 +17,13 @@ memory only and disappears after 10 minutes.
    permission and "Open at Login" would point to a volume that is gone once ejected.
 2. Open it. The app is not notarized by Apple, so macOS refuses the first time: go to System Settings > Privacy &
    Security and click "Open Anyway" (or run `xattr -dr com.apple.quarantine /Applications/SimpleClipboard.app`).
-3. Grant the Accessibility permission when asked (see Permissions).
+3. The first time, the app asks how to paste what you pick ("Paste Directly" or "Copy to Clipboard", which it
+   starts on) and whether to open at login. Both can be changed later in Settings.
+4. Grant the Accessibility permission when asked, if you chose to paste directly (see Permissions).
 
-The app checks GitHub for a new release shortly after launch and then once a day. When there is one, the menu-bar
-icon changes and the menu shows "Update Available", which opens the release page; nothing is downloaded or installed.
-This is the only network request the app makes, and nothing from the clipboard is sent.
+The app checks GitHub for a new release shortly after launch and then once a day. When there is one, the menu-bar icon
+turns blue, with an arrow, and the menu shows "Update Available…", which opens the release page; nothing is
+downloaded or installed. This is the only network request the app makes, and nothing from the clipboard is sent.
 
 ## Build and install
 
@@ -51,11 +53,17 @@ Code Signing).
 `⌘1`…`⌘0` the same for the card with that number · `⌘⌫` delete · `Esc` close · `⌘←` `⌘→` switch tab · `⌘T` tag ·
 right-click a card or a tab for more options.
 
+"Pause" in the menu-bar menu stops recording for 5, 15 or 30 minutes, or 1, 4 or 8 hours: what you copy meanwhile is
+not kept, then or later. The menu-bar icon is dimmed meanwhile and the menu says until when; "Resume", in that same
+submenu, ends it before its time. The history still opens and pastes while paused, and quitting the app does not end
+the pause. A pause is of this Mac only: another Mac of yours that is not paused still records what it copies, and what
+Universal Clipboard hands it from this one, and with sync between Macs that comes back here.
+
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open) opens a window with a pane per row of its sidebar
 (`↑` `↓` change pane):
 
-- **General**: open at login, and what happens when an item is picked: "Paste Directly" (the default) or "Copy to
-  Clipboard", which leaves the pasting to you.
+- **General**: open at login, and what happens when an item is picked: "Paste Directly" or "Copy to Clipboard",
+  which leaves the pasting to you.
 - **Privacy**: "Never Copy From", the apps whose copies are not kept in the history. Keychain Access is there from
   the start; `+` adds apps and `−` removes the selected one, Keychain Access too.
 
