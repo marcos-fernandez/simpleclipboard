@@ -30,6 +30,46 @@ final class PanelState {
     /// Active tab. Reset to .history every time the panel opens.
     var scope: HistoryStore.Scope = .history
 
+    /// Set on every show, from the screen the strip opens on.
+    var cardWidth = PanelMetrics.minCardWidth
+    /// How many cards fit in view, and how many of them, from the first in view, show a shortcut (see
+    /// `CardShortcuts`).
+    var cardCount = 1
+    var cardShortcutCount = 0
+    /// The first card in view: written by the strip as it scrolls, and set to scroll it. nil while the strip has
+    /// never been moved, which leaves it at its first card.
+    var leadingCardID: UUID?
+
+    /// The position in `results` of the first card in view. nil when that card is no longer there (expired, purged,
+    /// deleted from another Mac): the strip stays where it was, so counting from any other card would put the
+    /// shortcuts on cards that are off the screen.
+    func leadingIndex(in results: [ClipItem]) -> Int? {
+        guard let leadingCardID else {
+            return results.isEmpty
+                ? nil
+                : 0
+        }
+        return results.firstIndex { $0.id == leadingCardID }
+    }
+
+    /// Scrolls the strip so that the card at `index` is the first in view, or the nearest one that can be: the
+    /// strip keeps the id it is given even when it cannot bring that card to its edge.
+    func showFirst(_ index: Int, of results: [ClipItem]) {
+        guard !results.isEmpty else {
+            leadingCardID = nil
+            return
+        }
+        let reachable = StripLayout.reachableLeadingCard(index, itemCount: results.count, cardCount: cardCount)
+        leadingCardID = results[reachable].id
+    }
+
+    /// Whether a card that is still drawn has expired. `results(in:)` leaves expired items out, but the strip only
+    /// draws again when something it observes changes, and the passing of time is not one of those things.
+    func hasExpiredCard(in store: HistoryStore) -> Bool {
+        let now = Date()
+        return store.search(query, in: effectiveScope(in: store)).contains { $0.isExpired(at: now) }
+    }
+
     /// Falls back to the history tab if the active tag was deleted.
     /// Expired items are left out: the store only purges them every 30 s.
     func results(in store: HistoryStore) -> [ClipItem] {
@@ -132,7 +172,12 @@ final class KeyablePanel: NSPanel {
 
 @MainActor
 final class PanelController: NSObject, NSWindowDelegate {
-    private static let height: CGFloat = 300
+    /// The digit of each key of the number row. By key and not by character, unlike ⌘T below: the digits keep
+    /// their place on every layout, and on AZERTY those keys type "&", "é"… unless ⇧ is held.
+    private static let digitsByKeyCode = [
+        kVK_ANSI_0: 0, kVK_ANSI_1: 1, kVK_ANSI_2: 2, kVK_ANSI_3: 3, kVK_ANSI_4: 4,
+        kVK_ANSI_5: 5, kVK_ANSI_6: 6, kVK_ANSI_7: 7, kVK_ANSI_8: 8, kVK_ANSI_9: 9,
+    ]
     private static let margin: CGFloat = 8
 
     private let store: HistoryStore
@@ -185,6 +230,9 @@ final class PanelController: NSObject, NSWindowDelegate {
             // recorded on an earlier show would receive the paste unseen. The item is only copied.
             previousApp = nil
         }
+        // The strip opens with nothing expired in the store, so that `redrawIfAnyCardExpired` only finds what
+        // expires while it is open.
+        store.purgeExpired()
         state.query = ""
         state.selectedID = nil
         state.scope = .history
@@ -196,12 +244,24 @@ final class PanelController: NSObject, NSWindowDelegate {
         guard let visible = screen?.visibleFrame else {
             return
         }
+        let stripWidth = visible.width - 2 * Self.margin
+        let layout = StripLayout(
+            width: PanelMetrics.cardRowWidth(stripWidth: stripWidth),
+            minCardWidth: PanelMetrics.minCardWidth,
+            spacing: PanelMetrics.cardSpacing
+        )
+        state.cardCount = layout.cardCount
+        state.cardWidth = layout.cardWidth
+        state.cardShortcutCount = CardShortcuts.count(cardsThatFit: layout.cardCount)
+        // Here and not only when the view draws again: a ⌘ digit typed right after the hotkey is handled before
+        // that, and would count from the card left first in view the last time.
+        state.showFirst(0, of: state.results(in: store))
         panel.setFrame(
             NSRect(
                 x: visible.minX + Self.margin,
                 y: visible.minY + Self.margin,
-                width: visible.width - 2 * Self.margin,
-                height: Self.height
+                width: stripWidth,
+                height: PanelMetrics.stripHeight
             ),
             display: true
         )
@@ -278,12 +338,26 @@ final class PanelController: NSObject, NSWindowDelegate {
             default:
                 break
             }
+            if let digit = Self.digitsByKeyCode[Int(event.keyCode)],
+               let position = CardShortcuts.position(digit: digit) {
+                let results = state.results(in: store)
+                // Counted from the first card in view, and only the cards that show the shortcut: the others are
+                // off the screen. The key is taken either way, so a digit with no card does not reach the search
+                // field.
+                if !redrawIfAnyCardExpired(), position < state.cardShortcutCount,
+                   let leading = state.leadingIndex(in: results), results.indices.contains(leading + position) {
+                    pick(results[leading + position])
+                }
+                return true
+            }
             // By character, like the edit shortcuts: on Dvorak the key at kVK_ANSI_T does not type "t". A layout
             // with no Latin letters (Russian, Greek) types no "t" at all, so there the physical key still counts.
             let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
             let isLatin = key.unicodeScalars.allSatisfy(\.isASCII)
             if key == "t" || (!isLatin && Int(event.keyCode) == kVK_ANSI_T) {
-                openTagPicker()
+                if !redrawIfAnyCardExpired() {
+                    openTagPicker()
+                }
                 return true
             }
         }
@@ -301,15 +375,20 @@ final class PanelController: NSObject, NSWindowDelegate {
                 state.selectedID = results[index + 1].id
             }
         case kVK_Return, kVK_ANSI_KeypadEnter:
-            if results.indices.contains(index) {
+            if !redrawIfAnyCardExpired(), results.indices.contains(index) {
                 pick(results[index])
             }
         case kVK_Delete where event.modifierFlags.contains(.command):
-            if results.indices.contains(index) {
+            if !redrawIfAnyCardExpired(), results.indices.contains(index) {
                 store.remove(id: results[index].id)
                 // The list already in hand minus the removed item, instead of searching again.
                 var remaining = results
                 remaining.remove(at: index)
+                // The card that takes its place becomes the first in view: the removed one would leave the cards
+                // without shortcuts until the strip is drawn again.
+                if state.leadingCardID == results[index].id {
+                    state.showFirst(index, of: remaining)
+                }
                 state.selectedID = remaining.isEmpty
                     ? nil
                     : remaining[min(index, remaining.count - 1)].id
@@ -317,6 +396,17 @@ final class PanelController: NSObject, NSWindowDelegate {
         default:
             return sendEditShortcut(event)
         }
+        return true
+    }
+
+    /// Called before a key acts on a card by its position. With an expired card still drawn (see
+    /// `PanelState.hasExpiredCard`) the key would act on the neighbour of the card it shows: this purges instead,
+    /// which draws the strip again, and returns true, so the key does nothing this time.
+    private func redrawIfAnyCardExpired() -> Bool {
+        guard state.hasExpiredCard(in: store) else {
+            return false
+        }
+        store.purgeExpired()
         return true
     }
 
@@ -377,6 +467,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
         state.scope = scopes[next]
         state.selectedID = nil
+        // As in `show()`: before a ⌘ digit typed right after the tab switch.
+        state.showFirst(0, of: state.results(in: store))
     }
 
     /// The app has no main menu, so ⌘V/⌘C/⌘X/⌘A/⌘Z never reach the search field on their own.
