@@ -47,6 +47,9 @@ public final class HistoryStore {
     /// Mac sees it (`SyncService.sync`), however late its file arrives. Recording that at the capture instead would
     /// publish the hash of a secret no other Mac had.
     public private(set) var concealedCaptures: [String: Date] = [:]
+    /// How long a concealed item is kept, from its capture. For the ones added from now on: an item keeps the
+    /// expiry it was given.
+    public var concealedLifetime = Config.concealedLifetime
     /// Called after every save; the app uses it to publish to other Macs shortly after a local change.
     public var onPersist: (@MainActor () -> Void)?
 
@@ -118,7 +121,7 @@ public final class HistoryStore {
             ? now()
             : stamp(after: [previous?.createdAt, knownDeletion?(hash)].compactMap { $0 }.max())
         let expiresAt: Date? = concealed
-            ? createdAt.addingTimeInterval(Config.concealedLifetime)
+            ? createdAt.addingTimeInterval(concealedLifetime)
             : nil
         var item: ClipItem
 

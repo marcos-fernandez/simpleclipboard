@@ -3,8 +3,9 @@
 Clipboard manager for macOS, with optional backup and sync between Macs through iCloud Drive.
 Items can be tagged into named, coloured collections; tagged items never expire.
 Text and image history,
-search and direct pasting with `⇧⌘V`. Anything copied from 1Password is kept in
-memory only and disappears after 10 minutes.
+search and direct pasting with `⇧⌘V`. Anything copied from a password manager (the "Secured Apps" of the
+settings: 1Password and Passwords from the start) is kept in memory only and disappears after 10 minutes, or
+the time chosen there.
 
 ## Requirements
 
@@ -54,11 +55,18 @@ Code Signing).
 
 - **General**: open at login, and what happens when an item is picked: "Paste Directly" (the default) or "Copy to
   Clipboard", which leaves the pasting to you.
-- **Privacy**: "Never Copy From", the apps whose copies are not kept in the history. Keychain Access is there from
-  the start; `+` adds apps and `−` or `⌫` remove the selected one, Keychain Access too.
-  The list goes by the app in front when you copy: a copy made from a menu-bar icon, or by an app working in the
-  background, is not recognised as coming from that app and is kept. What was copied from an app before it was
-  added stays in the history. Each Mac has its own list: with sync between Macs, add the app on every one.
+- **Privacy**: two lists of apps. "Ignored Apps": what you copy from them is not kept in the history; Keychain
+  Access is there from the start. "Secured Apps": what you copy from them is kept hidden, in memory only, and never
+  reaches the backup or the other Macs; 1Password and Passwords are there from the start. "Keep For" sets how long
+  it is kept: 1, 5, 10 (the default) or 30 minutes, counted for what is copied from then on. In both lists, `+`
+  adds apps and `−` or `⌫` remove the selected one, the ones from the start too. An app shows in one list only,
+  and ignored wins: adding a secured app to the ignored ones hides it among the secured, where it shows again once
+  it is no longer ignored; adding an ignored app to the secured ones is refused. A list you have changed is yours
+  from then on: an app that a later version adds to the ones from the start does not reach it. "Reset to
+  Defaults…" leaves the lists and the time as a new install has them, with whatever that version starts from.
+  The lists go by the app in front when you copy: a copy made from a menu-bar icon, or by an app working in the
+  background, is not recognised as coming from that app and is kept as any other. What was copied from an app
+  before it was added stays as it was. Each Mac has its own lists: with sync between Macs, add the app on every one.
 
 With the Settings window in front, a picked item is only copied.
 
@@ -68,7 +76,7 @@ With the Settings window in front, a picked item is only copied.
 Changes are written in the background right after they happen; quitting the app writes any still on their way, and a
 crash or power cut can only lose those (normally the last fraction of a second).
 The last 1000 untagged items or 30 days. Tagged items are kept unless you delete them
-(`⌘⌫`) or copy the same value from 1Password (it then becomes an in-memory-only
+(`⌘⌫`) or copy the same value from one of the "Secured Apps" (it then becomes an in-memory-only
 copy). "Clear History…" deletes only untagged items. Each save also writes a copy of
 `history.json` and `tags.json` as `.prev`: if a file is found damaged at launch, it is moved to `.bak` and the
 `.prev` copy is loaded instead. If `tags.json` cannot be recovered either, its items stay tagged
@@ -77,7 +85,7 @@ repaired file).
 
 Backup: `~/Library/Mobile Documents/com~apple~CloudDocs/SimpleClipboard/Backup/`,
 automatic every hour when something changed, or from the menu ("Back Up Now",
-"Restore…"). Anything copied from 1Password is never included. There is a single
+"Restore…"). Anything copied from the "Secured Apps" is never included. There is a single
 backup: if two Macs back up, each one replaces the other's. "Restore" replaces the
 local history and tags. On a new Mac, the existing backup is restored automatically
 only while that Mac has nothing copied yet; once it does, the menu shows "Backup not restored" until you choose
@@ -88,8 +96,8 @@ damaged local file could not be recovered, so it never replaces the backup with 
 Sync between Macs: with "Sync Between Macs" turned on in each Mac (same iCloud account), the
 history and the tags stay the same through `iCloud Drive/SimpleClipboard/Sync/`: whatever is
 copied, deleted or tagged on one shows up on the other once iCloud Drive uploads and downloads the files (from
-seconds to a couple of minutes). Anything copied from 1Password never leaves the Mac. A deletion reaches both Macs; to
-undo it, "Restore…" brings the backup back on both. When it is first turned on
+seconds to a couple of minutes). Anything copied from the "Secured Apps" never leaves the Mac. A deletion reaches
+both Macs; to undo it, "Restore…" brings the backup back on both. When it is first turned on
 on a Mac, its history is joined with the others' without duplicating anything. Tags with the same name
 are merged into one, even if you created them that way on purpose, and so are two tags when one is renamed to the
 other's name. The app is installed on each Mac by building it there.

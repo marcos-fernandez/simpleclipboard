@@ -35,8 +35,32 @@ enum SettingsPane: CaseIterable {
     }
 }
 
-/// An app of the "Never Copy From" list, as the list shows it.
-struct IgnoredAppRow: Identifiable {
+/// The lists of apps of the Privacy pane, in the order it shows them. An app shows in one of them only.
+enum PrivacyList: CaseIterable {
+    case ignored
+    case secured
+
+    var caption: String {
+        switch self {
+        case .ignored:
+            return "What you copy from these apps is not kept in the history."
+        case .secured:
+            return "What you copy from these apps is kept hidden and never leaves this Mac."
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .ignored:
+            return "Ignored Apps"
+        case .secured:
+            return "Secured Apps"
+        }
+    }
+}
+
+/// An app of a list of the Privacy pane, as the list shows it.
+struct AppRow: Identifiable {
     /// The bundle identifier.
     let id: String
     let icon: NSImage
@@ -60,12 +84,13 @@ struct IgnoredAppRow: Identifiable {
 @MainActor
 @Observable
 final class SettingsState {
-    var ignoredApps: [IgnoredAppRow] = []
+    var apps: [PrivacyList: [AppRow]] = [:]
     var pane = SettingsPane.general
-    /// The app selected in the "Never Copy From" list, by bundle identifier.
-    var selectedIgnoredAppID: String?
+    /// The app selected in each list of the Privacy pane, by bundle identifier.
+    var selectedAppID: [PrivacyList: String] = [:]
     var opensAtLogin = false
     var pickAction = PickAction.pasteDirectly
+    var securedLifetime = Config.concealedLifetime
     var isAccessibilityGranted = false
 
     /// The pane `offset` rows away in the sidebar, stopping at its ends.
@@ -78,11 +103,13 @@ final class SettingsState {
 
 @MainActor
 struct SettingsActions {
-    let addIgnoredApps: @MainActor () -> Void
+    let addApps: @MainActor (PrivacyList) -> Void
     let openAccessibilitySettings: @MainActor () -> Void
-    let removeIgnoredApp: @MainActor (String) -> Void
+    let removeApp: @MainActor (String, PrivacyList) -> Void
+    let resetPrivacy: @MainActor () -> Void
     let setOpensAtLogin: @MainActor (Bool) -> Void
     let setPickAction: @MainActor (PickAction) -> Void
+    let setSecuredLifetime: @MainActor (TimeInterval) -> Void
 }
 
 /// The system's sidebar material, which SwiftUI only gives to a List.
@@ -108,9 +135,13 @@ struct SettingsView: View {
     private static let radioSpacing: CGFloat = 8
     /// Lines the header up with the boxes of the form.
     private static let headerInset: CGFloat = 20
-    /// Room for six apps: the list scrolls past that, so the window keeps its height however many there are.
-    private static let ignoredAppsHeight: CGFloat = 170
+    /// Room for four apps: a list scrolls past that, so the window keeps its height however many there are.
+    private static let appListHeight: CGFloat = 115
+    /// Between the options of a section that are controls of their own, as the two ways of pasting.
+    private static let optionSpacing: CGFloat = 16
     private static let paneWidth: CGFloat = 490
+    /// Between the sections of a pane.
+    private static let sectionSpacing: CGFloat = 24
     /// The same for every row, so the names line up whatever the width of each symbol.
     private static let sidebarIconWidth: CGFloat = 22
     private static let sidebarInset: CGFloat = 10
@@ -191,13 +222,29 @@ struct SettingsView: View {
     }
 
     private var privacy: some View {
+        VStack(alignment: .leading, spacing: Self.sectionSpacing) {
+            ForEach(PrivacyList.allCases, id: \.self) { list in
+                VStack(alignment: .leading, spacing: Self.optionSpacing) {
+                    appList(list)
+                    if list == .secured {
+                        securedLifetimePicker
+                    }
+                }
+            }
+            Button("Reset to Defaults…", action: actions.resetPrivacy)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(Self.headerInset)
+    }
+
+    private func appList(_ list: PrivacyList) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Never Copy From")
+            Text(list.title)
                 .font(.headline)
-            Text("What you copy from these apps is not kept in the history.")
+            Text(list.caption)
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            List(state.ignoredApps, selection: $state.selectedIgnoredAppID) { app in
+            List(state.apps[list] ?? [], selection: $state.selectedAppID[list]) { app in
                 HStack(spacing: 8) {
                     Image(nsImage: app.icon)
                         .resizable()
@@ -207,30 +254,48 @@ struct SettingsView: View {
             }
             .listStyle(.bordered)
             .alternatingRowBackgrounds()
-            .frame(height: Self.ignoredAppsHeight)
-            .onDeleteCommand(perform: removeSelectedIgnoredApp)
+            .frame(height: Self.appListHeight)
+            .onDeleteCommand {
+                removeSelectedApp(from: list)
+            }
             HStack(spacing: 12) {
-                Button(action: actions.addIgnoredApps) {
+                Button {
+                    actions.addApps(list)
+                } label: {
                     Image(systemName: "plus")
                 }
-                .accessibilityLabel("Add Apps…")
-                Button(action: removeSelectedIgnoredApp) {
+                .accessibilityLabel("Add to \(list.title)…")
+                Button {
+                    removeSelectedApp(from: list)
+                } label: {
                     Image(systemName: "minus")
                 }
-                .accessibilityLabel("Remove App")
-                .disabled(state.selectedIgnoredAppID == nil)
+                .accessibilityLabel("Remove from \(list.title)")
+                .disabled(state.selectedAppID[list] == nil)
             }
             .buttonStyle(.borderless)
         }
-        .padding(Self.headerInset)
     }
 
-    private func removeSelectedIgnoredApp() {
-        guard let bundleID = state.selectedIgnoredAppID else {
+    private var securedLifetimePicker: some View {
+        Picker(
+            "Keep For",
+            selection: Binding(get: { state.securedLifetime }, set: { actions.setSecuredLifetime($0) })
+        ) {
+            ForEach(ConcealedLifetime.choices, id: \.self) { lifetime in
+                Text(ConcealedLifetime.title(of: lifetime))
+                    .tag(lifetime)
+            }
+        }
+        .fixedSize()
+    }
+
+    private func removeSelectedApp(from list: PrivacyList) {
+        guard let bundleID = state.selectedAppID[list] else {
             return
         }
-        state.selectedIgnoredAppID = nil
-        actions.removeIgnoredApp(bundleID)
+        state.selectedAppID[list] = nil
+        actions.removeApp(bundleID, list)
     }
 
     private func sidebarRow(_ pane: SettingsPane) -> some View {
@@ -286,21 +351,24 @@ struct SettingsView: View {
                 )
             }
             Section("Paste Items") {
-                VStack(alignment: .leading, spacing: 10) {
-                    pickOption(
-                        .pasteDirectly,
-                        title: "Paste Directly",
-                        caption: "The item is pasted into the app you are using."
-                    )
-                    if showsAccessibilityNotice {
-                        HStack(spacing: Self.radioSpacing) {
-                            // As wide as the radio button, so the notice lines up with the option's text.
-                            Image(systemName: "circle")
-                                .hidden()
-                            Text("Accessibility permission not granted")
-                                .font(.callout)
-                            Button("Open System Settings…", action: actions.openAccessibilitySettings)
-                                .controlSize(.small)
+                VStack(alignment: .leading, spacing: Self.optionSpacing) {
+                    // The notice belongs to the first option: closer to it than the next option is.
+                    VStack(alignment: .leading, spacing: 10) {
+                        pickOption(
+                            .pasteDirectly,
+                            title: "Paste Directly",
+                            caption: "The item is pasted into the app you are using."
+                        )
+                        if showsAccessibilityNotice {
+                            HStack(spacing: Self.radioSpacing) {
+                                // As wide as the radio button, so the notice lines up with the option's text.
+                                Image(systemName: "circle")
+                                    .hidden()
+                                Text("Accessibility permission not granted")
+                                    .font(.callout)
+                                Button("Open System Settings…", action: actions.openAccessibilitySettings)
+                                    .controlSize(.small)
+                            }
                         }
                     }
                     pickOption(
