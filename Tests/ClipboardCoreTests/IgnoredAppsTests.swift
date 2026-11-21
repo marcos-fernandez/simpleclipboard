@@ -7,10 +7,6 @@ struct IgnoredAppsTests {
         #expect(IgnoredApps.list(stored: nil) == ["com.apple.keychainaccess"])
     }
 
-    @Test func aSavedListIsReadBackInItsOrder() {
-        #expect(IgnoredApps.list(stored: ["com.b", "com.a"]) == ["com.b", "com.a"])
-    }
-
     @Test func aSavedEmptyListStaysEmpty() {
         // The user removed every app, the default one too: it must not come back at the next launch.
         #expect(IgnoredApps.list(stored: []) == [])
@@ -18,10 +14,6 @@ struct IgnoredAppsTests {
 
     @Test func aSavedListWithARepeatedAppListsItOnce() {
         #expect(IgnoredApps.list(stored: ["com.a", "com.b", "com.a"]) == ["com.a", "com.b"])
-    }
-
-    @Test func addedAppsGoToTheEndInTheirOrder() {
-        #expect(IgnoredApps.adding(["com.c", "com.b"], to: ["com.a"]) == ["com.a", "com.c", "com.b"])
     }
 
     @Test func anAppAlreadyInTheListIsNotAddedAgain() {

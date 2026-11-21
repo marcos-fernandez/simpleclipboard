@@ -97,7 +97,7 @@ private struct SidebarBackground: NSViewRepresentable {
 }
 
 struct SettingsView: View {
-    let state: SettingsState
+    @Bindable var state: SettingsState
     let actions: SettingsActions
     /// Called when another pane comes on show, by the sidebar or by the keyboard.
     let onPaneChange: (SettingsPane) -> Void
@@ -197,10 +197,7 @@ struct SettingsView: View {
             Text("What you copy from these apps is not kept in the history.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            List(
-                state.ignoredApps,
-                selection: Binding(get: { state.selectedIgnoredAppID }, set: { state.selectedIgnoredAppID = $0 })
-            ) { app in
+            List(state.ignoredApps, selection: $state.selectedIgnoredAppID) { app in
                 HStack(spacing: 8) {
                     Image(nsImage: app.icon)
                         .resizable()
