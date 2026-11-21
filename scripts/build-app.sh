@@ -4,6 +4,8 @@
 # Accessibility permission survives rebuilds; falls back to ad-hoc signing.
 # Releases set UNIVERSAL=1 (one binary for Apple Silicon and Intel), APP_VERSION and SIGNING_IDENTITY.
 # APP_VERSION defaults to the latest git tag without its leading v.
+# APP_BUILD_DIR moves the folder the app is created in (default: build/ in the repository), and SwiftPM's own
+# SWIFTPM_BUILD_DIR moves .build: both together keep every build product out of the repository.
 set -euo pipefail
 
 readonly APP_NAME="SimpleClipboard"
@@ -12,7 +14,7 @@ readonly PRODUCT_NAME="Clipboard"
 readonly SIGNING_IDENTITY="${SIGNING_IDENTITY:-Clipboard Local Signing}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 readonly ROOT_DIR
-readonly APP_DIR="${ROOT_DIR}/build/${APP_NAME}.app"
+readonly APP_DIR="${APP_BUILD_DIR:-${ROOT_DIR}/build}/${APP_NAME}.app"
 
 cd "${ROOT_DIR}"
 # A local build would otherwise say Info.plist's 1.0 and report every release as an update: it takes the latest tag's
