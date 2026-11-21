@@ -105,7 +105,6 @@ struct SettingsView: View {
     /// Whether the window is the one in use: the system's sidebars grey their selection when it is not.
     @Environment(\.controlActiveState) private var controlActiveState
 
-    private static let radioSpacing: CGFloat = 8
     /// Lines the header up with the boxes of the form.
     private static let headerInset: CGFloat = 20
     /// Room for six apps: the list scrolls past that, so the window keeps its height however many there are.
@@ -296,7 +295,7 @@ struct SettingsView: View {
                         caption: "The item is pasted into the app you are using."
                     )
                     if showsAccessibilityNotice {
-                        HStack(spacing: Self.radioSpacing) {
+                        HStack(spacing: PickOptionRow.spacing) {
                             // As wide as the radio button, so the notice lines up with the option's text.
                             Image(systemName: "circle")
                                 .hidden()
@@ -317,38 +316,9 @@ struct SettingsView: View {
         .formStyle(.grouped)
     }
 
-    /// A radio button with its explanation underneath. Drawn here: in a grouped form the system's radio group puts
-    /// the buttons on the trailing edge and takes no second line.
     private func pickOption(_ option: PickAction, title: String, caption: String) -> some View {
-        let isSelected = state.pickAction == option
-        let symbol = isSelected
-            ? "circle.inset.filled"
-            : "circle"
-        let symbolColor = isSelected
-            ? Color.accentColor
-            : Color.secondary
-        let traits: AccessibilityTraits = isSelected
-            ? .isSelected
-            : []
-        return Button {
+        PickOptionRow(title: title, caption: caption, isSelected: state.pickAction == option) {
             actions.setPickAction(option)
-        } label: {
-            HStack(alignment: .firstTextBaseline, spacing: Self.radioSpacing) {
-                Image(systemName: symbol)
-                    .foregroundStyle(symbolColor)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                    Text(caption)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-            // The whole row is the target, not only the drawn parts.
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(traits)
     }
 }
