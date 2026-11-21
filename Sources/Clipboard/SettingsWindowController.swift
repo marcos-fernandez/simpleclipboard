@@ -104,6 +104,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         panel.prompt = "Add"
         panel.beginSheetModal(for: window) { response in
             if response == .OK {
+                // Gone before the completion, which may show an alert: a sheet still on its way out would be under it.
+                panel.orderOut(nil)
                 completion(panel.urls)
             }
         }

@@ -120,7 +120,22 @@ struct HistoryStoreTests {
         #expect(makeStore().items.isEmpty)
     }
 
-    // MARK: concealed (1Password)
+    // MARK: concealed
+
+    @Test func aChangedLifetimeCountsForTheConcealedItemsAddedAfterIt() {
+        let store = makeStore()
+        store.add(.text("first"), source: onePassword, concealed: true)
+        store.concealedLifetime = 60
+        store.add(.text("second"), source: onePassword, concealed: true)
+
+        clock.advance(61)
+        store.purgeExpired()
+        #expect(store.items.map(\.text) == ["first"])
+
+        clock.advance(Config.concealedLifetime)
+        store.purgeExpired()
+        #expect(store.items.isEmpty)
+    }
 
     @Test func concealedItemSurvivesJustUnder10MinutesAndIsGoneAfter() {
         let store = makeStore()

@@ -34,6 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let ignoredAppsKey = "ignoredSourceBundleIDs"
     private static let loginItemRegisteredKey = "loginItemRegistered"
     private static let pickActionKey = "pickAction"
+    private static let securedAppsKey = "concealedSourceBundleIDs"
+    private static let securedLifetimeKey = "concealedLifetime"
 
     private let settingsState = SettingsState()
     private var settings: SettingsWindowController!
@@ -56,6 +58,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var updateItem: NSMenuItem!
     private var updateSeparator: NSMenuItem!
 
+    /// In English like the rest of the app, whatever the language of the system.
+    private static let listFormatter: ListFormatter = {
+        let formatter = ListFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        return formatter
+    }()
+
     /// In English like the rest of the menu, whatever the language of the system.
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
@@ -63,12 +72,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return formatter
     }()
 
-    private var ignoredApps: [String] {
-        IgnoredApps.list(stored: UserDefaults.standard.stringArray(forKey: Self.ignoredAppsKey))
-    }
-
     private var pickAction: PickAction {
         PickAction(stored: UserDefaults.standard.string(forKey: Self.pickActionKey))
+    }
+
+    private var securedLifetime: TimeInterval {
+        ConcealedLifetime.lifetime(stored: UserDefaults.standard.object(forKey: Self.securedLifetimeKey) as? Double)
     }
 
     private var lastBackupDate: Date? {
@@ -121,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let files = FilePersistence(directory: directory)
         persistence = BackgroundPersistence(wrapping: files)
         store = HistoryStore(persistence: persistence)
+        store.concealedLifetime = securedLifetime
         if files.dataWasLost {
             UserDefaults.standard.set(true, forKey: Self.localDataLostKey)
         }
@@ -147,9 +157,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         RunLoop.main.add(launchBackupTimer, forMode: .common)
 
-        monitor = ClipboardMonitor(store: store) { [weak self] in
-            Set(self?.ignoredApps ?? [])
-        }
+        monitor = ClipboardMonitor(
+            store: store,
+            concealedSourceBundleIDs: { [weak self] in
+                Set(self?.apps(of: .secured) ?? [])
+            },
+            ignoredSourceBundleIDs: { [weak self] in
+                Set(self?.apps(of: .ignored) ?? [])
+            }
+        )
         monitor.start()
 
         let purgeTimer = Timer(timeInterval: Config.purgeInterval, repeats: true) { [weak self] _ in
@@ -182,20 +198,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settings = SettingsWindowController(
             state: settingsState,
             actions: SettingsActions(
-                addIgnoredApps: { [weak self] in
-                    self?.addIgnoredApps()
+                addApps: { [weak self] list in
+                    self?.addApps(to: list)
                 },
                 openAccessibilitySettings: {
                     NSWorkspace.shared.open(Config.accessibilitySettingsURL)
                 },
-                removeIgnoredApp: { [weak self] bundleID in
-                    self?.removeIgnoredApp(bundleID)
+                removeApp: { [weak self] bundleID, list in
+                    self?.removeApp(bundleID, from: list)
+                },
+                resetPrivacy: { [weak self] in
+                    self?.resetPrivacy()
                 },
                 setOpensAtLogin: { [weak self] isOn in
                     self?.setOpensAtLogin(isOn)
                 },
                 setPickAction: { [weak self] action in
                     self?.setPickAction(action)
+                },
+                setSecuredLifetime: { [weak self] lifetime in
+                    self?.setSecuredLifetime(lifetime)
                 }
             ),
             onBecomeKey: { [weak self] in
@@ -675,28 +697,104 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refreshSettings() {
         // Names and icons are looked up here, once per change, and not by the view each time it draws.
-        settingsState.ignoredApps = ignoredApps
-            .map(IgnoredAppRow.init(bundleID:))
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        for list in PrivacyList.allCases {
+            let listed = apps(of: list)
+            settingsState.apps[list] = listed
+                .map(AppRow.init(bundleID:))
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            // An app that left the list, as a secured one just added to the ignored ones, is no longer selected:
+            // "−" would act on a row that is not there.
+            if let selected = settingsState.selectedAppID[list], !listed.contains(selected) {
+                settingsState.selectedAppID[list] = nil
+            }
+        }
         settingsState.opensAtLogin = SMAppService.mainApp.status == .enabled
         settingsState.pickAction = pickAction
+        settingsState.securedLifetime = securedLifetime
         settingsState.isAccessibilityGranted = AXIsProcessTrusted()
     }
 
-    private func addIgnoredApps() {
+    /// Where a list of the Privacy pane is saved and what it starts from.
+    private static func storage(of list: PrivacyList) -> (key: String, defaults: Set<String>) {
+        switch list {
+        case .ignored:
+            return (ignoredAppsKey, Config.ignoredSourceBundleIDs)
+        case .secured:
+            return (securedAppsKey, Config.concealedSourceBundleIDs)
+        }
+    }
+
+    /// What a list of the Privacy pane holds: what the user saved or, with nothing saved, what it starts from.
+    private func savedApps(of list: PrivacyList) -> [String] {
+        let storage = Self.storage(of: list)
+        return AppList.list(stored: UserDefaults.standard.stringArray(forKey: storage.key), defaults: storage.defaults)
+    }
+
+    /// The apps a list of the Privacy pane shows and acts on. An ignored app that the secured list also holds (one
+    /// it starts from, ignored by the user) shows as ignored only, which is what happens to its copies. It stays in
+    /// what the secured list holds, and is never saved out of it: taken out of the ignored ones, it is secured again.
+    private func apps(of list: PrivacyList) -> [String] {
+        list == .secured
+            ? AppList.excluding(savedApps(of: .ignored), from: savedApps(of: list))
+            : savedApps(of: list)
+    }
+
+    private func addApps(to list: PrivacyList) {
         settings.chooseApps { [weak self] urls in
             guard let self else {
                 return
             }
+            defer {
+                handFocusBack()
+            }
             // Something that is not an app with an identifier cannot be told apart as the source of a copy.
             let bundleIDs = urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
-            UserDefaults.standard.set(IgnoredApps.adding(bundleIDs, to: ignoredApps), forKey: Self.ignoredAppsKey)
-            refreshSettings()
+            // Ignored wins over secured: an app goes into the ignored ones whatever the secured list holds, and
+            // is hidden there from then on. The other way round would add an app nobody sees, so it is refused.
+            let other = list == .secured
+                ? savedApps(of: .ignored)
+                : []
+            let addition = AppList.addition(of: bundleIDs, to: savedApps(of: list), other: other)
+            if let added = addition.list {
+                UserDefaults.standard.set(added, forKey: Self.storage(of: list).key)
+                refreshSettings()
+            }
+            if !addition.refused.isEmpty {
+                showIgnoredCannotBeSecured(addition.refused)
+            }
         }
     }
 
-    private func removeIgnoredApp(_ bundleID: String) {
-        UserDefaults.standard.set(IgnoredApps.removing(bundleID, from: ignoredApps), forKey: Self.ignoredAppsKey)
+    private func removeApp(_ bundleID: String, from list: PrivacyList) {
+        let apps = AppList.removing(bundleID, from: savedApps(of: list))
+        UserDefaults.standard.set(apps, forKey: Self.storage(of: list).key)
+        refreshSettings()
+    }
+
+    private func resetPrivacy() {
+        defer {
+            handFocusBack()
+        }
+        let alert = NSAlert()
+        alert.messageText = "Reset Privacy to its defaults?"
+        alert.informativeText = """
+            The apps you added are removed, the ones each list started with come back, and what you copy from the \
+            secured apps is kept for \(ConcealedLifetime.title(of: Config.concealedLifetime)) again.
+            """
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        // Only the settings window calls this: the user stays in it (see `setOpensAtLogin`).
+        appInFrontBeforeAlert = .current
+        guard runAlert(alert) == .alertFirstButtonReturn else {
+            return
+        }
+        // Nothing saved is what a new install has: the values of `Config`.
+        for list in PrivacyList.allCases {
+            UserDefaults.standard.removeObject(forKey: Self.storage(of: list).key)
+        }
+        UserDefaults.standard.removeObject(forKey: Self.securedLifetimeKey)
+        store.concealedLifetime = securedLifetime
+        settingsState.selectedAppID = [:]
         refreshSettings()
     }
 
@@ -706,6 +804,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             requestAccessibilityIfNeeded()
         }
         refreshSettings()
+    }
+
+    /// For what is copied from now on: an item already kept hidden goes when it was going to.
+    private func setSecuredLifetime(_ lifetime: TimeInterval) {
+        UserDefaults.standard.set(lifetime, forKey: Self.securedLifetimeKey)
+        store.concealedLifetime = securedLifetime
+        refreshSettings()
+    }
+
+    private func showIgnoredCannotBeSecured(_ bundleIDs: [String]) {
+        // In quotes, as the system names an app in its alerts: "Passwords" alone reads as a word of the sentence.
+        let names = Self.listFormatter.string(from: bundleIDs.map { "“\(AppRow(bundleID: $0).name)”" }) ?? ""
+        let ignored = PrivacyList.ignored.title
+        let alert = NSAlert()
+        alert.messageText = "\(names) cannot be added to \(PrivacyList.secured.title)"
+        alert.informativeText = bundleIDs.count == 1
+            ? """
+                It is in \(ignored), so nothing you copy from it is kept. To secure it instead, remove it from \
+                \(ignored) first.
+                """
+            : """
+                They are in \(ignored), so nothing you copy from them is kept. To secure them instead, remove them \
+                from \(ignored) first.
+                """
+        // Only the settings window calls this: the user stays in it (see `setOpensAtLogin`).
+        appInFrontBeforeAlert = .current
+        runAlert(alert)
     }
 
     /// Registers only on first launch so a user who disables it, in Settings or in System Settings, is respected.
