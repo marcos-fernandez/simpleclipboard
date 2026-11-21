@@ -54,6 +54,7 @@ right-click a card or a tab for more options.
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open) opens a window with a pane per row of its sidebar
 (`↑` `↓` change pane):
 
+- **About**: the version, the author and a link to this repository.
 - **General**: open at login, and what happens when an item is picked: "Paste Directly" (the default) or "Copy to
   Clipboard", which leaves the pasting to you.
 - **Privacy**: "Never Copy From", the apps whose copies are not kept in the history. Keychain Access is there from

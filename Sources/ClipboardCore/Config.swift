@@ -47,6 +47,9 @@ public enum Config {
         string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
     )!
 
+    /// Shown in the About pane of the settings.
+    public static let authorName = "Marcos Fernández"
+    public static let repositoryURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard")!
     /// Built here, never taken from the response: the menu item only ever opens this page.
     public static let releasesPageURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard/releases/latest")!
     public static let latestReleaseAPIURL = URL(
