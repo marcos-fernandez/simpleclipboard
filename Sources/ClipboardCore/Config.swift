@@ -68,6 +68,8 @@ public enum Config {
         // Apple's Passwords app (macOS 15+): not relied on to mark its copies as concealed.
         "com.apple.Passwords",
     ]
+    /// What "Never Copy From" starts from. Once the user has changed that list theirs is saved whole, so an app
+    /// added here later only reaches new installs and the users who never touched it.
     public static let ignoredSourceBundleIDs: Set<String> = [
         "com.apple.keychainaccess",
     ]
