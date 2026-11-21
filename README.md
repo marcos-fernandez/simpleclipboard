@@ -47,9 +47,12 @@ Code Signing).
 
 ## Usage
 
-`⇧⌘V` opens the history · `←` `→` navigate · type to search · `Enter` paste or copy (see Settings) ·
-`⌘1`…`⌘0` the same for the card with that number · `⌘⌫` delete · `Esc` close · `⌘←` `⌘→` switch tab · `⌘T` tag ·
-right-click a card or a tab for more options.
+`⇧⌘V` opens the history · `←` `→` navigate · type to search (or `⌘F`) · `Enter` paste or copy (see Settings) ·
+`⌘1`…`⌘9` the same for the card with that number · `⌘⌫` delete · `Esc` clear the search, or close · `⌘←` `⌘→` switch
+tab · `⌘T` tag · right-click a card or a tab for more options.
+
+The history opens with the keyboard on its cards, at most nine in view. A search, and the tab it was made in, are
+still there when the history is opened again, until a card is picked: closing it by mistake does not lose them.
 
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open) opens a window with a pane per row of its sidebar
 (`↑` `↓` change pane):
