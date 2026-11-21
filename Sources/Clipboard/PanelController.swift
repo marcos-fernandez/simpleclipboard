@@ -309,6 +309,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     func hide() {
         removeKeyMonitor()
+        SharePicker.shared.close()
         panel.orderOut(nil)
     }
 
@@ -406,6 +407,12 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     /// Returns true when the key was handled; arrows never move the text cursor.
     private func handle(_ event: NSEvent) -> Bool {
+        // The share menu hangs from the panel and takes no keys of its own: the first one closes it and does
+        // nothing else, so that Esc does not clear the search behind it nor Return paste a card.
+        if SharePicker.shared.isOpen {
+            SharePicker.shared.close()
+            return true
+        }
         // While an input method is composing (e.g. Japanese), Return confirms a candidate and arrows move within it.
         if let input = panel.firstResponder as? NSTextInputClient, input.hasMarkedText() {
             return false

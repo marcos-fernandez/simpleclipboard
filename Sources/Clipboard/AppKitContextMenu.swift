@@ -4,8 +4,9 @@ import SwiftUI
 /// A context menu built in AppKit, laid over the view it belongs to. A SwiftUI context menu takes items with a name
 /// and little else: no row of colour dots, no dot before the name of a tag, no mark on the one in use.
 struct AppKitContextMenu: NSViewRepresentable {
-    /// Called each time the menu is about to open, so it shows what is true then.
-    let build: () -> NSMenu
+    /// Called each time the menu is about to open, so it shows what is true then. It is given the view the menu
+    /// opens from: what an item shows next (the system's share menu) needs a view to come out of.
+    let build: (NSView) -> NSMenu
 
     func makeNSView(context: Context) -> MenuView {
         let view = MenuView()
@@ -19,7 +20,7 @@ struct AppKitContextMenu: NSViewRepresentable {
 
     /// It takes only the clicks that open a menu; the others go through to the view under it.
     final class MenuView: NSView {
-        var build: (() -> NSMenu)?
+        var build: ((NSView) -> NSMenu)?
 
         override func hitTest(_ point: NSPoint) -> NSView? {
             guard let event = NSApp.currentEvent else {
@@ -33,7 +34,7 @@ struct AppKitContextMenu: NSViewRepresentable {
         }
 
         override func menu(for event: NSEvent) -> NSMenu? {
-            let menu = build?()
+            let menu = build?(self)
             // Only what the app puts in it: the system adds items of its own to a context menu otherwise.
             menu?.allowsContextMenuPlugIns = false
             return menu

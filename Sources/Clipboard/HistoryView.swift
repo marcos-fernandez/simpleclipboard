@@ -29,7 +29,7 @@ struct HistoryView: View {
         let selectedIndex = state.selectedIndex(in: results)
         VStack(spacing: PanelMetrics.stripSpacing) {
             // One row, centred: the search field keeps its width and the tabs take what they need.
-            HStack(spacing: 12) {
+            HStack(spacing: PanelMetrics.searchRowSpacing) {
                 // Drawn here: taller and rounder than the system's bordered field, like the search of System Settings.
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
@@ -65,6 +65,12 @@ struct HistoryView: View {
                     }
                 }
                 TabBarView(store: store, state: state)
+            }
+            // Clear at both ends, so the field and the tabs stay in the middle with the share button at the end.
+            .padding(.horizontal, PanelMetrics.shareButtonSize + PanelMetrics.searchRowSpacing)
+            .frame(maxWidth: .infinity)
+            .overlay(alignment: .trailing) {
+                shareButton(results, selectedIndex: selectedIndex)
             }
 
             if results.isEmpty {
@@ -115,6 +121,18 @@ struct HistoryView: View {
         state.showFirst(0, of: state.results(in: store))
     }
 
+    /// Shares the selected card.
+    private func shareButton(_ results: [ClipItem], selectedIndex: Int) -> some View {
+        let selected = results.indices.contains(selectedIndex)
+            ? results[selectedIndex]
+            : nil
+        let canShare = selected.map { CardShare.canShare($0, store: store) } ?? false
+        return ShareButton(isEnabled: canShare) {
+            selected.map { CardShare.items(for: $0, store: store) } ?? []
+        }
+        .frame(width: PanelMetrics.shareButtonSize, height: PanelMetrics.shareButtonSize)
+    }
+
     private var emptyMessage: String {
         if !state.query.isEmpty {
             return "No results"
@@ -143,6 +161,7 @@ struct HistoryView: View {
             LazyHStack(spacing: PanelMetrics.cardSpacing) {
                 ForEach(results) { item in
                     ClipCardView(
+                        appColor: AppIcons.color(bundleID: item.sourceAppBundleID),
                         item: item,
                         image: ThumbnailCache.image(for: item, store: store),
                         isSelected: item.id == selectedCardID,
@@ -158,13 +177,17 @@ struct HistoryView: View {
                         state.selectedID = item.id
                     }
                     .overlay {
-                        AppKitContextMenu {
+                        AppKitContextMenu { card in
                             CardMenu.menu(
+                                card: card,
                                 item: item,
                                 tags: store.tags,
                                 onDelete: { onDelete(item) },
                                 onNewTag: { state.apply(.newTag, to: item.id, in: store) },
-                                onSetTag: { store.setTag(itemID: item.id, tagID: $0) }
+                                onSetTag: { store.setTag(itemID: item.id, tagID: $0) },
+                                shareItems: CardShare.canShare(item, store: store)
+                                    ? { CardShare.items(for: item, store: store) }
+                                    : nil
                             )
                         }
                     }
