@@ -7,9 +7,16 @@ import Testing
 struct ClipItemSharingTests {
     private func item(kind: ClipItem.Kind = .text, text: String? = "copied", isConcealed: Bool = false) -> ClipItem {
         ClipItem(
-            createdAt: Date(timeIntervalSince1970: 1_000_000), kind: kind, text: text,
-            imageFileName: kind == .image ? "image.png" : nil, contentHash: "h",
-            source: SourceApp(bundleID: nil, name: nil), isConcealed: isConcealed, expiresAt: nil
+            createdAt: Date(timeIntervalSince1970: 1_000_000),
+            kind: kind,
+            text: text,
+            imageFileName: kind == .image
+                ? "image.png"
+                : nil,
+            contentHash: "h",
+            source: SourceApp(bundleID: nil, name: nil),
+            isConcealed: isConcealed,
+            expiresAt: nil
         )
     }
 
