@@ -15,6 +15,12 @@ struct PauseTests {
         #expect(!Pause.isActive(until: end, now: end.addingTimeInterval(1)))
     }
 
+    @Test func anEndFurtherAwayThanTheLongestPauseIsNoPause() {
+        let longest = 8.0 * 60 * 60
+        #expect(Pause.isActive(until: end, now: end.addingTimeInterval(-longest)))
+        #expect(!Pause.isActive(until: end, now: end.addingTimeInterval(-longest - 1)))
+    }
+
     @Test func theDurationsGoFromShortestToLongest() {
         #expect(Pause.durations == Pause.durations.sorted())
     }

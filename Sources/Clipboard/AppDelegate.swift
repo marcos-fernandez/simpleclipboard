@@ -77,6 +77,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         IgnoredApps.list(stored: UserDefaults.standard.stringArray(forKey: Self.ignoredAppsKey))
     }
 
+    /// Whether this launch is the first of the app on this Mac: its data folder was not there. Set at launch.
+    private var isNewInstall = false
+
     private var isPaused: Bool {
         Pause.isActive(until: pausedUntil, now: Date())
     }
@@ -129,6 +132,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             directory: directory,
             iCloudDriveRoot: iCloudDriveRoot
         )
+        // After the migration, which brings the folder of the old app name, and before anything creates it.
+        isNewInstall = !FileManager.default.fileExists(atPath: directory.path)
 
         backup = BackupService(localDirectory: directory, iCloudDriveRoot: iCloudDriveRoot)
         // Before FilePersistence, which creates an empty images/ that would keep the leftover images out.
@@ -257,11 +262,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // alert took the record of the app in front.
             NSApp.hide(nil)
         }
-        // From what is saved, when something is: an install that ran before but never got its login item registered
-        // is asked too, and must not lose the way of pasting it had chosen. A new one starts on copying.
-        if UserDefaults.standard.string(forKey: Self.pickActionKey) != nil {
-            state.pickAction = pickAction
-        }
+        // An install that ran before but never got its login item registered, or that came from the old app name,
+        // is asked too: it starts on the way of pasting it had, chosen or not. Only a new one starts on copying.
+        state.pickAction = PickAction.atWelcome(
+            isNewInstall: isNewInstall, stored: UserDefaults.standard.string(forKey: Self.pickActionKey)
+        )
         // The alert has no text of its own: its title cannot be made larger, so the welcome is drawn in the view.
         alert.messageText = ""
         alert.accessoryView = WelcomeView.accessoryView(state: state)
@@ -361,14 +366,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshSyncItems()
         statusItem.menu = menu
         // A pause may come from before the app was quit.
-        refreshStatusIcon()
-        schedulePauseEnd()
-        // And may have ended while the Mac slept, when the timer of its end stood still.
+        refreshPause()
+        // The timer of its end stands still while the Mac sleeps, and goes by the clock it was set with: after a
+        // sleep or a change of the clock the pause is looked at again against its saved end, and the timer set for
+        // what is left of it. Otherwise the icon would say "paused" after recording has started again.
         _ = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.refreshStatusIcon()
+                self?.refreshPause()
+            }
+        }
+        _ = NotificationCenter.default.addObserver(
+            forName: .NSSystemClockDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refreshPause()
             }
         }
     }
@@ -412,12 +425,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         UserDefaults.standard.set(Date().addingTimeInterval(duration), forKey: Self.pausedUntilKey)
-        refreshStatusIcon()
-        schedulePauseEnd()
+        refreshPause()
     }
 
     @objc private func resume() {
         UserDefaults.standard.removeObject(forKey: Self.pausedUntilKey)
+        refreshPause()
+    }
+
+    /// The icon as the saved end of the pause says now, and the timer for that end.
+    private func refreshPause() {
         refreshStatusIcon()
         schedulePauseEnd()
     }

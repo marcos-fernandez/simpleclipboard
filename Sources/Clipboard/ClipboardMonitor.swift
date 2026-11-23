@@ -10,7 +10,7 @@ final class ClipboardMonitor {
     private let pasteboard = NSPasteboard.general
     /// Converts and hashes off the main thread, and adds to the store in the order copied.
     private let captures: CaptureQueue
-    private var lastChangeCount: Int
+    private var changes: PasteboardChanges
     private var timer: Timer?
     /// Apps that lost focus since the previous poll (e.g. 1Password handing focus back to the browser).
     private var recentlyDeactivated: Set<String> = []
@@ -25,7 +25,7 @@ final class ClipboardMonitor {
         captures = CaptureQueue(store: store) { tiff in
             NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
         }
-        lastChangeCount = pasteboard.changeCount
+        changes = PasteboardChanges(changeCount: pasteboard.changeCount)
         _ = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didDeactivateApplicationNotification,
             object: nil,
@@ -55,13 +55,7 @@ final class ClipboardMonitor {
     private func poll() {
         let recentSourceBundleIDs = recentlyDeactivated
         recentlyDeactivated.removeAll()
-        let changeCount = pasteboard.changeCount
-        guard changeCount != lastChangeCount else {
-            return
-        }
-        lastChangeCount = changeCount
-        // After the count is taken: a copy made while paused is passed over for good, not read when the pause ends.
-        guard isPaused?() != true else {
+        guard changes.hasCopyToRead(changeCount: pasteboard.changeCount, isPaused: { isPaused?() == true }) else {
             return
         }
 
