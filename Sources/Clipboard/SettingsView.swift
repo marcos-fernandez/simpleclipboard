@@ -73,6 +73,10 @@ final class SettingsState {
     var opensAtLogin = false
     var pickAction = PickAction.pasteDirectly
     var isAccessibilityGranted = false
+    /// Whether the menu-bar item is on show, not the saved setting.
+    var showsMenuBarIcon = true
+    /// False when ⇧⌘V could not be registered: the icon then stays whatever the setting.
+    var canHideMenuBarIcon = true
 
     /// The pane `offset` rows away in the sidebar, stopping at its ends.
     func movePane(by offset: Int) {
@@ -89,6 +93,7 @@ struct SettingsActions {
     let removeIgnoredApp: @MainActor (String) -> Void
     let setOpensAtLogin: @MainActor (Bool) -> Void
     let setPickAction: @MainActor (PickAction) -> Void
+    let setShowsMenuBarIcon: @MainActor (Bool) -> Void
 }
 
 /// The system's sidebar material, which SwiftUI only gives to a List.
@@ -319,6 +324,16 @@ struct SettingsView: View {
                     // converting a @MainActor function to the plain one a Binding takes.
                     isOn: Binding(get: { state.opensAtLogin }, set: { actions.setOpensAtLogin($0) })
                 )
+                // A grouped form draws the second text of the label under the first, in the secondary style.
+                Toggle(isOn: Binding(get: { state.showsMenuBarIcon }, set: { actions.setShowsMenuBarIcon($0) })) {
+                    Text("Show in Menu Bar")
+                    Text(
+                        state.canHideMenuBarIcon
+                            ? "When it is off, the menu opens from the wrench next to the search field of the history."
+                            : "⇧⌘V could not be set up, and nothing else would open the app: the icon stays."
+                    )
+                }
+                .disabled(!state.canHideMenuBarIcon)
             }
             Section("Paste Items") {
                 VStack(alignment: .leading, spacing: 10) {
