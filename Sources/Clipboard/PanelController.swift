@@ -22,6 +22,10 @@ enum TagPickerOption: Hashable {
 @Observable
 final class PanelState {
     var query = ""
+    /// Whether there is a search: text of only blanks is none (see `SearchKeys.isSearch`).
+    var hasSearch: Bool {
+        SearchKeys.isSearch(query)
+    }
     /// Selection follows the item, not its position, so new copies or purges don't shift it.
     /// nil means "first result".
     var selectedID: UUID?
@@ -260,6 +264,10 @@ final class PanelController: NSObject, NSWindowDelegate {
             state.scope = .history
             startsClean = false
         }
+        // Blanks left in the field are no search to go on with.
+        if !state.hasSearch {
+            state.query = ""
+        }
         state.selectedID = nil
         // Before the overlay goes: the view gives the keyboard back to the field when one closes, and a panel that
         // was hidden with one open would do it now.
@@ -301,7 +309,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.makeFirstResponder(nil)
         state.isSearchFocused = false
         state.showRequest += 1
-        if !state.query.isEmpty {
+        if state.hasSearch {
             focusSearchField(selectingText: false)
         }
         installKeyMonitor()
@@ -331,6 +339,8 @@ final class PanelController: NSObject, NSWindowDelegate {
     private func delete(_ item: ClipItem) {
         let results = state.results(in: store)
         guard let index = results.firstIndex(where: { $0.id == item.id }) else {
+            // The card has expired and is still drawn: purging takes it away, which is what was asked for.
+            store.purgeExpired()
             return
         }
         remove(at: index, of: results)
@@ -469,10 +479,10 @@ final class PanelController: NSObject, NSWindowDelegate {
         case kVK_Escape:
             // With a search, the first Esc is for it: closing would keep the text for the next time the history
             // opens, and the way out of a search would be to delete it by hand.
-            if state.query.isEmpty {
-                hide()
-            } else {
+            if state.hasSearch {
                 state.query = ""
+            } else {
+                hide()
             }
         case kVK_LeftArrow:
             if index > 0 {
@@ -491,6 +501,12 @@ final class PanelController: NSObject, NSWindowDelegate {
                 remove(at: index, of: results)
             }
         default:
+            // Paste, select all and undo are for the search field, and with the keyboard on the cards they would
+            // go to nobody: the keyboard is taken there first, after its text.
+            if !state.isSearchFocused, modifiers.subtracting(.shift) == .command,
+               SearchKeys.isEditShortcutOfTheField(event.charactersIgnoringModifiers) {
+                focusSearchField(selectingText: false)
+            }
             return sendEditShortcut(event)
         }
         return true
