@@ -13,8 +13,9 @@ the time chosen there.
 
 ## Install
 
-1. Download `SimpleClipboard.zip` from the [latest release](../../releases/latest) (one build for Apple Silicon and
-   Intel), unzip it and drag `SimpleClipboard.app` to Applications.
+1. Download the `.dmg` from the [latest release](../../releases/latest) (`universal`: one build for Apple Silicon
+   and Intel), open it and drag `SimpleClipboard.app` to Applications. Do not run it from the disk image: the
+   permission and "Open at Login" would point to a volume that is gone once ejected.
 2. Open it. The app is not notarized by Apple, so macOS refuses the first time: go to System Settings > Privacy &
    Security and click "Open Anyway" (or run `xattr -dr com.apple.quarantine /Applications/SimpleClipboard.app`).
 3. Grant the Accessibility permission when asked (see Permissions).
@@ -48,7 +49,8 @@ Code Signing).
 ## Usage
 
 `⇧⌘V` opens the history · `←` `→` navigate · type to search · `Enter` paste or copy (see Settings) ·
-`⌘⌫` delete · `Esc` close · `⌘←` `⌘→` switch tab · `⌘T` tag · right-click a card or a tab for more options.
+`⌘1`…`⌘0` the same for the card with that number · `⌘⌫` delete · `Esc` close · `⌘←` `⌘→` switch tab · `⌘T` tag ·
+right-click a card or a tab for more options.
 
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open) opens a window with a pane per row of its sidebar
 (`↑` `↓` change pane, unless a list has the focus):

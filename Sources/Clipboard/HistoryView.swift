@@ -24,7 +24,7 @@ struct HistoryView: View {
     var body: some View {
         let results = state.results(in: store)
         let selectedIndex = state.selectedIndex(in: results)
-        VStack(spacing: 12) {
+        VStack(spacing: PanelMetrics.stripSpacing) {
             // One row, centred: the search field keeps its width and the tabs take what they need.
             HStack(spacing: 12) {
                 // Drawn here: taller and rounder than the system's bordered field, like the search of System Settings.
@@ -47,7 +47,7 @@ struct HistoryView: View {
                     }
                 }
                 .padding(.horizontal, 10)
-                .frame(width: 280, height: 30)
+                .frame(width: 280, height: PanelMetrics.searchRowHeight)
                 .background(Color.primary.opacity(0.08), in: Capsule())
                 .overlay {
                     if searchFocused {
@@ -66,7 +66,7 @@ struct HistoryView: View {
                 cards(results, selectedIndex: selectedIndex)
             }
         }
-        .padding(16)
+        .padding(PanelMetrics.stripPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .overlay {
@@ -79,10 +79,10 @@ struct HistoryView: View {
             searchFocused = newValue == nil
         }
         .onChange(of: state.query) {
-            state.selectedID = nil
+            startFromTheFirstCard()
         }
         .onChange(of: state.scope) {
-            state.selectedID = nil
+            startFromTheFirstCard()
         }
         .onAppear {
             searchFocused = true
@@ -90,6 +90,12 @@ struct HistoryView: View {
         .onChange(of: state.focusRequest) {
             searchFocused = true
         }
+    }
+
+    /// Another search or tab is another list: nothing selected, and the strip back at its first card.
+    private func startFromTheFirstCard() {
+        state.selectedID = nil
+        state.showFirst(0, of: state.results(in: store))
     }
 
     private var emptyMessage: String {
@@ -112,59 +118,79 @@ struct HistoryView: View {
     private func cards(_ results: [ClipItem], selectedIndex: Int) -> some View {
         // By id, so no indexed copy of the whole list is built on every body pass.
         let selectedCardID = results[selectedIndex].id
-        return ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
-                    ForEach(results) { item in
-                        ClipCardView(
-                            item: item,
-                            image: ThumbnailCache.image(for: item, store: store),
-                            isSelected: item.id == selectedCardID,
-                            tagColor: tagColor(for: item)
-                        )
-                        .id(item.id)
-                        .onTapGesture(count: 2) {
-                            onPick(item)
-                        }
-                        .onTapGesture {
-                            state.selectedID = item.id
-                        }
-                        .contextMenu {
-                            Menu("Tag") {
-                                ForEach(store.tags) { tag in
-                                    Button(tag.name) {
-                                        store.setTag(itemID: item.id, tagID: tag.id)
-                                    }
-                                }
-                                if !store.tags.isEmpty {
-                                    Divider()
-                                }
-                                Button("New Tag…") {
-                                    state.apply(.newTag, to: item.id, in: store)
+        // The cards in view, from the first one, show the shortcut that picks them (see `CardShortcuts`).
+        let leadingIndex = state.leadingIndex(in: results)
+        let shortcutIDs = leadingIndex.map { results.dropFirst($0).prefix(state.cardShortcutCount).map(\.id) } ?? []
+        let cardWidth = state.cardWidth
+        return ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: PanelMetrics.cardSpacing) {
+                ForEach(results) { item in
+                    ClipCardView(
+                        item: item,
+                        image: ThumbnailCache.image(for: item, store: store),
+                        isSelected: item.id == selectedCardID,
+                        tagColor: tagColor(for: item),
+                        shortcut: shortcutIDs.firstIndex(of: item.id).flatMap(CardShortcuts.label(position:)),
+                        width: cardWidth
+                    )
+                    .id(item.id)
+                    .onTapGesture(count: 2) {
+                        onPick(item)
+                    }
+                    .onTapGesture {
+                        state.selectedID = item.id
+                    }
+                    .contextMenu {
+                        Menu("Tag") {
+                            ForEach(store.tags) { tag in
+                                Button(tag.name) {
+                                    store.setTag(itemID: item.id, tagID: tag.id)
                                 }
                             }
-                            .disabled(item.isConcealed)
-                            Button("Remove Tag") {
-                                store.setTag(itemID: item.id, tagID: nil)
+                            if !store.tags.isEmpty {
+                                Divider()
                             }
-                            .disabled(item.isConcealed || item.tagID == nil)
+                            Button("New Tag…") {
+                                state.apply(.newTag, to: item.id, in: store)
+                            }
                         }
+                        .disabled(item.isConcealed)
+                        Button("Remove Tag") {
+                            store.setTag(itemID: item.id, tagID: nil)
+                        }
+                        .disabled(item.isConcealed || item.tagID == nil)
                     }
                 }
-                .padding(.horizontal, 4)
             }
-            // The card shown as selected, not `selectedID`: nil (after reopening, a tab switch or a search) and a
-            // removed or expired item fall back to the first card, which must then be scrolled into view too.
-            .onChange(of: selectedCardID) { _, newID in
-                withAnimation {
-                    proxy.scrollTo(newID, anchor: .center)
-                }
+            .scrollTargetLayout()
+        }
+        // Margins of the scroll and not padding of the row: a scroll that only goes as far as a card needs keeps
+        // them, where it would leave the card against the edge with its border cut.
+        .contentMargins(.horizontal, PanelMetrics.rowInset, for: .scrollContent)
+        // The strip always stops on whole cards, by hand too: the shortcuts count from the first card in view, and
+        // a card cut at the edge would show one for something the user does not see whole.
+        .scrollTargetBehavior(.viewAligned)
+        .scrollPosition(id: $state.leadingCardID, anchor: .leading)
+        // The card shown as selected, not `selectedID`: nil (after reopening, a tab switch or a search) and a
+        // removed or expired item fall back to the first card, which must then be scrolled into view too.
+        .onChange(of: selectedCardID) {
+            let leading = StripLayout.leadingCard(
+                current: leadingIndex ?? selectedIndex, selected: selectedIndex, cardCount: state.cardCount
+            )
+            withAnimation {
+                state.showFirst(leading, of: results)
             }
-            // The panel keeps its scroll offset while hidden; on every show the selected card must be on screen
-            // even when the selection did not change.
-            .onChange(of: state.focusRequest) {
-                proxy.scrollTo(selectedCardID, anchor: .center)
+        }
+        // The first card in view is gone from the list and the strip does not say where it is now: the card that
+        // took its place becomes the first, so the cards in view have their shortcuts again.
+        .onChange(of: leadingIndex) { oldIndex, newIndex in
+            if newIndex == nil, let oldIndex {
+                state.showFirst(oldIndex, of: results)
             }
+        }
+        // The panel keeps its scroll offset while hidden; every show starts from the first card, the selected one.
+        .onChange(of: state.focusRequest) {
+            state.showFirst(0, of: results)
         }
     }
 }
