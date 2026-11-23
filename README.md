@@ -19,9 +19,35 @@ memory only and disappears after 10 minutes.
    Security and click "Open Anyway" (or run `xattr -dr com.apple.quarantine /Applications/SimpleClipboard.app`).
 3. Grant the Accessibility permission when asked (see Permissions).
 
+### From the terminal
+
+A browser marks what it downloads as quarantined, which is what makes macOS refuse the app; `curl` and `gh` do not,
+so an app installed this way opens without "Open Anyway". The same commands update an installed copy.
+
+```bash
+version="$(curl -fsSL https://api.github.com/repos/marcos-fernandez/simpleclipboard/releases/latest \
+    | sed -n 's/.*"tag_name": *"v\([0-9.]*\)".*/\1/p')"
+releases="https://github.com/marcos-fernandez/simpleclipboard/releases/download"
+curl -fLO "${releases}/v${version}/SimpleClipboard-${version}-universal.dmg"
+# or, with the GitHub CLI: gh release download -R marcos-fernandez/simpleclipboard -p '*-universal.dmg'
+mount_point="$(mktemp -d)"
+hdiutil attach -nobrowse -readonly -mountpoint "${mount_point}" SimpleClipboard-*-universal.dmg
+osascript -e 'quit app "SimpleClipboard"' || true   # a normal quit, so the last changes are written
+ditto "${mount_point}/SimpleClipboard.app" /Applications/SimpleClipboard.app
+hdiutil detach "${mount_point}"
+open /Applications/SimpleClipboard.app
+```
+
+### Updates
+
 The app checks GitHub for a new release shortly after launch and then once a day. When there is one, the menu-bar
-icon changes and the menu shows "Update Available", which opens the release page; nothing is downloaded or installed.
-This is the only network request the app makes, and nothing from the clipboard is sent.
+icon changes and the menu shows "Update Available". Choosing it downloads the release's disk image, checks that the
+app in it is signed like the running one and is the version offered, puts it in place and asks whether to restart
+now. If any of that fails, it offers the release page instead. A copy built from the source code is not signed like
+the releases, so it always ends at the release page.
+
+The check, and the download once you choose the update, are the only network requests the app makes; nothing from
+the clipboard is sent.
 
 ## Build and install
 

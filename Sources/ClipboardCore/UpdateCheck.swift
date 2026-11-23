@@ -66,17 +66,19 @@ public enum UpdateCheckResult: Equatable, Sendable {
     }
 }
 
-/// Asks GitHub for the latest release and compares it with the running version. The only network request the app
-/// makes: a plain GET, without cookies or cache, that sends nothing about the user.
+/// Asks GitHub for the latest release and compares it with the running version: a plain GET, without cookies or
+/// cache, that sends nothing about the user. The only other request is the download of an update the user chose
+/// (see `UpdateInstaller`).
 public enum UpdateCheck {
-    public static func makeSession() -> URLSession {
+    /// `timeout`: the check's by default; the download of a disk image passes `Config.updateDownloadTimeout`.
+    public static func makeSession(timeout: TimeInterval = Config.updateCheckTimeout) -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.timeoutIntervalForRequest = Config.updateCheckTimeout
-        configuration.timeoutIntervalForResource = Config.updateCheckTimeout
+        configuration.timeoutIntervalForRequest = timeout
+        configuration.timeoutIntervalForResource = timeout
         return URLSession(configuration: configuration)
     }
 

@@ -20,6 +20,14 @@ struct UpdateInstallerTests {
         #expect(!arguments[1].contains(app.path))
         #expect(Array(arguments.suffix(2)) == ["42", app.path])
     }
+
+    @Test func theDownloadGetsItsOwnTimeoutAndTheCheckKeepsItsOwn() {
+        // A disk image of a few MB on a slow connection does not fit in the 30 s of the check.
+        let download = UpdateCheck.makeSession(timeout: Config.updateDownloadTimeout).configuration
+        #expect(download.timeoutIntervalForRequest == Config.updateDownloadTimeout)
+        #expect(download.timeoutIntervalForResource == Config.updateDownloadTimeout)
+        #expect(UpdateCheck.makeSession().configuration.timeoutIntervalForResource == Config.updateCheckTimeout)
+    }
 }
 
 /// Runs the whole install on disk images built here, with apps signed ad hoc: the designated requirement of an

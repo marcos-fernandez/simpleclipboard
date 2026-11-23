@@ -6,6 +6,14 @@ import ServiceManagement
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    /// Where installing the offered update has got to; the menu item shows it.
+    private enum UpdateInstallState {
+        case idle
+        case downloading
+        /// On disk, waiting for a restart.
+        case installed(AppVersion)
+    }
+
     private static let logger = Logger(subsystem: Config.bundleID, category: "AppDelegate")
 
     private var store: HistoryStore!
@@ -50,7 +58,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// One for the app's lifetime: a session is only freed once invalidated.
     private let updateSession = UpdateCheck.makeSession()
+    private let updateDownloadSession = UpdateCheck.makeSession(timeout: Config.updateDownloadTimeout)
     private var updateTimer: Timer?
+    private var updateInstallState = UpdateInstallState.idle
     private var availableUpdate: AppVersion?
     private var lastUpdateAnswer: Date?
     private var updateItem: NSMenuItem!
@@ -224,7 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let menu = NSMenu()
         // Hidden until a check finds a newer release, so without one the menu is unchanged.
-        updateItem = NSMenuItem(title: "", action: #selector(openReleasesPage), keyEquivalent: "")
+        updateItem = NSMenuItem(title: "", action: #selector(chooseUpdate), keyEquivalent: "")
         updateItem.target = self
         updateItem.isHidden = true
         menu.addItem(updateItem)
@@ -366,12 +376,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if result != .failed {
             lastUpdateAnswer = Date()
         }
+        // Once an update is on its way the item stands for it: the running app still says the old version, so a
+        // check would offer the same update again.
+        guard case .idle = updateInstallState else {
+            return
+        }
         availableUpdate = result.availableUpdate(replacing: availableUpdate)
         updateItem.isHidden = availableUpdate == nil
         updateSeparator.isHidden = availableUpdate == nil
-        updateItem.title = availableUpdate
-            .map { "Update Available: \($0)…" }
-            ?? ""
+        refreshUpdateItem()
         // Set here and not in menuNeedsUpdate: the icon has to change without the menu being opened.
         let plainIcon = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: Config.appName)
         // Falls back to the plain icon: a symbol missing on this macOS would leave the menu-bar item invisible.
@@ -383,7 +396,109 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 ?? plainIcon
     }
 
-    @objc private func openReleasesPage() {
+    private func refreshUpdateItem() {
+        switch updateInstallState {
+        case .idle:
+            updateItem.title = availableUpdate
+                .map { "Update Available: \($0)…" }
+                ?? ""
+            updateItem.isEnabled = true
+        case .downloading:
+            updateItem.title = "Downloading Update…"
+            updateItem.isEnabled = false
+        case .installed(let version):
+            updateItem.title = "Restart to Update to \(version)"
+            updateItem.isEnabled = true
+        }
+    }
+
+    @objc private func chooseUpdate() {
+        switch updateInstallState {
+        case .idle:
+            if let availableUpdate {
+                installUpdate(availableUpdate)
+            }
+        case .downloading:
+            // The item is disabled meanwhile.
+            break
+        case .installed:
+            restart()
+        }
+    }
+
+    private func installUpdate(_ version: AppVersion) {
+        let requirement: String
+        do {
+            requirement = try UpdateInstaller.runningAppRequirement()
+        } catch {
+            updateFailed(.signature)
+            return
+        }
+        updateInstallState = .downloading
+        refreshUpdateItem()
+        let session = updateDownloadSession
+        let app = Bundle.main.bundleURL
+        Task { [weak self] in
+            // The download and the install run off the main actor; only the outcome comes back to it.
+            do {
+                try await UpdateInstaller.install(version: version, over: app, requirement: requirement) { url in
+                    try await session.download(from: url)
+                }
+                self?.updateInstalled(version)
+            } catch {
+                self?.updateFailed(error as? UpdateInstallError ?? .download)
+            }
+        }
+    }
+
+    private func updateInstalled(_ version: AppVersion) {
+        updateInstallState = .installed(version)
+        refreshUpdateItem()
+        let alert = NSAlert()
+        alert.messageText = "\(Config.appName) \(version) is installed"
+        alert.informativeText = "Restart now to use it, or later: it opens the next time \(Config.appName) starts."
+        alert.addButton(withTitle: "Restart")
+        alert.addButton(withTitle: "Later")
+        if runAlert(alert) == .alertFirstButtonReturn {
+            restart()
+        } else {
+            handFocusBack()
+        }
+    }
+
+    private func updateFailed(_ error: UpdateInstallError) {
+        updateInstallState = .idle
+        refreshUpdateItem()
+        let alert = NSAlert()
+        alert.messageText = "Cannot install the update"
+        alert.informativeText = Self.describe(error)
+        alert.addButton(withTitle: "Open Release Page")
+        alert.addButton(withTitle: "Cancel")
+        if runAlert(alert) == .alertFirstButtonReturn {
+            // The browser comes to the front: focus is not handed back to the app that was there.
+            appInFrontBeforeAlert = nil
+            openReleasesPage()
+        } else {
+            handFocusBack()
+        }
+    }
+
+    /// Opens the app on disk once this process has quit: a normal quit, so the last changes are written first.
+    private func restart() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = UpdateInstaller.restartArguments(pid: getpid(), app: Bundle.main.bundleURL)
+        do {
+            try process.run()
+        } catch {
+            showError("Cannot restart \(Config.appName)", error: error)
+            handFocusBack()
+            return
+        }
+        NSApp.terminate(nil)
+    }
+
+    private func openReleasesPage() {
         NSWorkspace.shared.open(Config.releasesPageURL)
     }
 
@@ -644,6 +759,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return "This Mac's history, tags or images folder cannot be read, so they were not backed up."
         case nil:
             return error.localizedDescription
+        }
+    }
+
+    private static func describe(_ error: UpdateInstallError) -> String {
+        switch error {
+        case .cannotReplace:
+            return "This user cannot replace \(Config.appName) in its folder. Install it from the release page instead."
+        case .download:
+            return "The update could not be downloaded. Check the connection, or try again later: the release may still be being published."
+        case .mount:
+            return "The downloaded disk image could not be opened."
+        case .missingApp:
+            return "The downloaded disk image does not contain \(Config.appName)."
+        case .signature:
+            return "The update is not signed like this copy of \(Config.appName), so it was not installed. A copy built from the source code cannot install releases."
+        case .wrongVersion:
+            return "The downloaded app is not the version that was offered, so it was not installed."
         }
     }
 
