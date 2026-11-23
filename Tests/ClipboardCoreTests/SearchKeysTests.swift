@@ -21,4 +21,25 @@ struct SearchKeysTests {
     func aKeyThatTypesNothingIsLeftToThePanel(characters: String) {
         #expect(!SearchKeys.typesText(characters))
     }
+
+    @Test(arguments: ["v", "V", "a", "z"])
+    func pasteSelectAllAndUndoAreForTheSearchField(key: String) {
+        #expect(SearchKeys.isEditShortcutOfTheField(key))
+    }
+
+    @Test(arguments: ["c", "x", "t", "", nil] as [String?])
+    func theOtherShortcutsDoNotTakeTheKeyboardToTheField(key: String?) {
+        // Copy and cut among them: on the cards there is no selected text for them.
+        #expect(!SearchKeys.isEditShortcutOfTheField(key))
+    }
+
+    @Test(arguments: ["", " ", "   ", "\t", " \n "])
+    func aSearchOfOnlyBlanksIsNoSearch(query: String) {
+        #expect(!SearchKeys.isSearch(query))
+    }
+
+    @Test(arguments: ["a", " a ", "two words"])
+    func anythingElseIsASearch(query: String) {
+        #expect(SearchKeys.isSearch(query))
+    }
 }

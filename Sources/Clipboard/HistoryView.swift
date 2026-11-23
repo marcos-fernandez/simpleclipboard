@@ -134,7 +134,7 @@ struct HistoryView: View {
     }
 
     private var emptyMessage: String {
-        if !state.query.isEmpty {
+        if state.hasSearch {
             return "No results"
         }
         if case .tag = state.effectiveScope(in: store) {
