@@ -3,9 +3,10 @@ import ClipboardCore
 import Observation
 import SwiftUI
 
-/// The panes of the settings window, in the order of the sidebar. Only the ones with something in them: a pane is
-/// added here together with its content.
+/// The panes of the settings window, in the order of the sidebar: alphabetical. Only the ones with something in them:
+/// a pane is added here together with its content.
 enum SettingsPane: CaseIterable {
+    case about
     case general
     case privacy
 
@@ -15,6 +16,8 @@ enum SettingsPane: CaseIterable {
             return "gearshape"
         case .privacy:
             return "hand.raised"
+        case .about:
+            return "info.circle"
         }
     }
 
@@ -24,6 +27,8 @@ enum SettingsPane: CaseIterable {
             return "General"
         case .privacy:
             return "Privacy"
+        case .about:
+            return "About"
         }
     }
 
@@ -61,6 +66,7 @@ struct IgnoredAppRow: Identifiable {
 @Observable
 final class SettingsState {
     var ignoredApps: [IgnoredAppRow] = []
+    /// General and not the first row of the sidebar: About is first only by its name.
     var pane = SettingsPane.general
     /// The app selected in the "Never Copy From" list, by bundle identifier.
     var selectedIgnoredAppID: String?
@@ -102,7 +108,7 @@ private struct SidebarBackground: NSViewRepresentable {
 }
 
 struct SettingsView: View {
-    let state: SettingsState
+    @Bindable var state: SettingsState
     let actions: SettingsActions
     /// Called when another pane comes on show, by the sidebar or by the keyboard.
     let onPaneChange: (SettingsPane) -> Void
@@ -110,7 +116,12 @@ struct SettingsView: View {
     /// Whether the window is the one in use: the system's sidebars grey their selection when it is not.
     @Environment(\.controlActiveState) private var controlActiveState
 
+    private static let aboutIconSize: CGFloat = 96
     private static let radioSpacing: CGFloat = 8
+    /// The bundle's version, which does not change while the app runs.
+    private static let versionText = AboutInfo.versionText(
+        shortVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+    )
     /// Lines the header up with the boxes of the form.
     private static let headerInset: CGFloat = 20
     /// Room for six apps: the list scrolls past that, so the window keeps its height however many there are.
@@ -192,7 +203,31 @@ struct SettingsView: View {
             general(showsAccessibilityNotice: atItsTallest || isAccessibilityNoticeDue)
         case .privacy:
             privacy
+        case .about:
+            about
         }
+    }
+
+    private var about: some View {
+        VStack(spacing: 6) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: Self.aboutIconSize, height: Self.aboutIconSize)
+                // The name under it already says what it is.
+                .accessibilityHidden(true)
+            Text(Config.appName)
+                .font(.title2)
+                .fontWeight(.semibold)
+            // Selectable, to be pasted into a bug report.
+            Text(Self.versionText)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            Text("By \(Config.authorName)")
+                .padding(.top, 8)
+            Link(Config.repositoryURL.absoluteString, destination: Config.repositoryURL)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(Self.headerInset)
     }
 
     private var privacy: some View {
@@ -202,10 +237,7 @@ struct SettingsView: View {
             Text("What you copy from these apps is not kept in the history.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            List(
-                state.ignoredApps,
-                selection: Binding(get: { state.selectedIgnoredAppID }, set: { state.selectedIgnoredAppID = $0 })
-            ) { app in
+            List(state.ignoredApps, selection: $state.selectedIgnoredAppID) { app in
                 HStack(spacing: 8) {
                     Image(nsImage: app.icon)
                         .resizable()

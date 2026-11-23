@@ -53,15 +53,19 @@ Code Signing).
 right-click a card or a tab for more options.
 
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open) opens a window with a pane per row of its sidebar
-(`↑` `↓` change pane):
+(`↑` `↓` change pane, unless a list has the focus):
 
+- **About**: the version, the author and a link to this repository.
 - **General**: open at login; "Show in Menu Bar", which hides the menu-bar icon when off: its menu then opens from a
   wrench to the left of the search field of the history (`⇧⌘V`). If `⇧⌘V` cannot be registered the icon stays, as
   nothing else would open the app. Opening the app again (from Finder or Spotlight) also shows the history, for when
   another app has taken `⇧⌘V`. And what happens when an item is picked: "Paste Directly" (the default) or "Copy to
   Clipboard", which leaves the pasting to you.
 - **Privacy**: "Never Copy From", the apps whose copies are not kept in the history. Keychain Access is there from
-  the start; `+` adds apps and `−` removes the selected one, Keychain Access too.
+  the start; `+` adds apps and `−` or `⌫` remove the selected one, Keychain Access too.
+  The list goes by the app in front when you copy: a copy made from a menu-bar icon, or by an app working in the
+  background, is not recognised as coming from that app and is kept. What was copied from an app before it was
+  added stays in the history. Each Mac has its own list: with sync between Macs, add the app on every one.
 
 With the Settings window in front, a picked item is only copied.
 

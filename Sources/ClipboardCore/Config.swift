@@ -47,6 +47,9 @@ public enum Config {
         string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
     )!
 
+    /// Shown in the About pane of the settings.
+    public static let authorName = "Marcos Fernández"
+    public static let repositoryURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard")!
     /// Built here, never taken from the response: the menu item only ever opens this page.
     public static let releasesPageURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard/releases/latest")!
     public static let latestReleaseAPIURL = URL(
@@ -68,6 +71,8 @@ public enum Config {
         // Apple's Passwords app (macOS 15+): not relied on to mark its copies as concealed.
         "com.apple.Passwords",
     ]
+    /// What "Never Copy From" starts from. Once the user has changed that list theirs is saved whole, so an app
+    /// added here later only reaches new installs and the users who never touched it.
     public static let ignoredSourceBundleIDs: Set<String> = [
         "com.apple.keychainaccess",
     ]
