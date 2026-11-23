@@ -66,6 +66,9 @@ public enum Config {
     /// and the users who never changed theirs.
     public static let concealedSourceBundleIDs: Set<String> = [
         "com.1password.1password",
+        // 1Password 7, which later versions replace: hidden by this identifier since before the list could be
+        // changed, so it stays for whoever still uses it.
+        "com.agilebits.onepassword7",
         // Apple's Passwords app (macOS 15+): not relied on to mark its copies as concealed.
         "com.apple.Passwords",
     ]

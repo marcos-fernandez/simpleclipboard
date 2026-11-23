@@ -730,13 +730,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return AppList.list(stored: UserDefaults.standard.stringArray(forKey: storage.key), defaults: storage.defaults)
     }
 
-    /// The apps a list of the Privacy pane shows and acts on. An ignored app that the secured list also holds (one
-    /// it starts from, ignored by the user) shows as ignored only, which is what happens to its copies. It stays in
-    /// what the secured list holds, and is never saved out of it: taken out of the ignored ones, it is secured again.
+    /// Both lists as saved. What each shows and what is saved for it after a change are worked out from the two
+    /// together (see `PrivacyLists`), and never from what a list shows.
+    private var privacyLists: PrivacyLists {
+        PrivacyLists(ignored: savedApps(of: .ignored), secured: savedApps(of: .secured))
+    }
+
+    /// The apps a list of the Privacy pane shows and acts on.
     private func apps(of list: PrivacyList) -> [String] {
-        list == .secured
-            ? AppList.excluding(savedApps(of: .ignored), from: savedApps(of: list))
-            : savedApps(of: list)
+        privacyLists.shown(list)
     }
 
     private func addApps(to list: PrivacyList) {
@@ -749,12 +751,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             // Something that is not an app with an identifier cannot be told apart as the source of a copy.
             let bundleIDs = urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
-            // Ignored wins over secured: an app goes into the ignored ones whatever the secured list holds, and
-            // is hidden there from then on. The other way round would add an app nobody sees, so it is refused.
-            let other = list == .secured
-                ? savedApps(of: .ignored)
-                : []
-            let addition = AppList.addition(of: bundleIDs, to: savedApps(of: list), other: other)
+            let addition = privacyLists.adding(bundleIDs, to: list)
             if let added = addition.list {
                 UserDefaults.standard.set(added, forKey: Self.storage(of: list).key)
                 refreshSettings()
@@ -766,7 +763,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func removeApp(_ bundleID: String, from list: PrivacyList) {
-        let apps = AppList.removing(bundleID, from: savedApps(of: list))
+        let apps = privacyLists.removing(bundleID, from: list)
         UserDefaults.standard.set(apps, forKey: Self.storage(of: list).key)
         refreshSettings()
     }

@@ -36,10 +36,9 @@ enum SettingsPane: CaseIterable {
 }
 
 /// The lists of apps of the Privacy pane, in the order it shows them. An app shows in one of them only.
-enum PrivacyList: CaseIterable {
-    case ignored
-    case secured
+typealias PrivacyList = PrivacyLists.Kind
 
+extension PrivacyLists.Kind {
     var caption: String {
         switch self {
         case .ignored:
