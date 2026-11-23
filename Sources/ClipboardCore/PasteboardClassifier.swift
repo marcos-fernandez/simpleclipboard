@@ -18,7 +18,7 @@ public enum PasteboardClassifier {
         types: Set<String>,
         sourceBundleID: String?,
         recentSourceBundleIDs: Set<String> = [],
-        ignoredSourceBundleIDs: Set<String> = Config.ignoredSourceBundleIDs
+        ignoredSourceBundleIDs: Set<String>
     ) -> Classification {
         if !types.isDisjoint(with: ignoredTypes) {
             return .ignore

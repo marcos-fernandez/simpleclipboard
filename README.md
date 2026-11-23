@@ -52,12 +52,15 @@ Code Signing).
 right-click a card or a tab for more options.
 
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open) opens a window with a pane per row of its sidebar
-(`↑` `↓` change pane):
+(`↑` `↓` change pane, unless a list has the focus):
 
 - **General**: open at login, and what happens when an item is picked: "Paste Directly" (the default) or "Copy to
   Clipboard", which leaves the pasting to you.
 - **Privacy**: "Never Copy From", the apps whose copies are not kept in the history. Keychain Access is there from
-  the start; `+` adds apps and `−` removes the selected one, Keychain Access too.
+  the start; `+` adds apps and `−` or `⌫` remove the selected one, Keychain Access too.
+  The list goes by the app in front when you copy: a copy made from a menu-bar icon, or by an app working in the
+  background, is not recognised as coming from that app and is kept. What was copied from an app before it was
+  added stays in the history. Each Mac has its own list: with sync between Macs, add the app on every one.
 
 With the Settings window in front, a picked item is only copied.
 
