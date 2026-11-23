@@ -98,6 +98,7 @@ struct UpdateInstallerInstallTests {
         let empty = try folder("empty")
         let image = root.appendingPathComponent("empty.dmg")
         try Self.run("/usr/bin/hdiutil", "create", "-quiet", "-srcfolder", empty.path, "-format", "UDZO", image.path)
+        try Self.detachLeftovers(of: image)
         await #expect(throws: UpdateInstallError.missingApp) {
             try await UpdateInstaller.install(
                 version: try Self.version("1.2.0"),
@@ -187,7 +188,27 @@ struct UpdateInstallerInstallTests {
             "-format", "UDZO",
             image.path
         )
+        try detachLeftovers(of: image)
         return image
+    }
+
+    /// `hdiutil create -srcfolder` sometimes leaves the image it made attached, unmounted: each test run would add
+    /// a few disks to `hdiutil info` until the next restart.
+    static func detachLeftovers(of image: URL) throws {
+        let info = try PropertyListSerialization.propertyList(
+            from: try output("/usr/bin/hdiutil", "info", "-plist"),
+            format: nil
+        ) as? [String: Any]
+        let images = info?["images"] as? [[String: Any]] ?? []
+        let path = image.resolvingSymlinksInPath().path
+        for attached in images where (attached["image-path"] as? String)
+            .map({ URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }) == path {
+            let entities = attached["system-entities"] as? [[String: Any]] ?? []
+            // The whole disk, /dev/diskN, detaches its partitions with it.
+            if let disk = entities.compactMap({ $0["dev-entry"] as? String }).min(by: { $0.count < $1.count }) {
+                try run("/usr/bin/hdiutil", "detach", "-force", "-quiet", disk)
+            }
+        }
     }
 
     /// What `URLSession.download(from:)` gives: a file of its own, which the installer moves.
@@ -207,12 +228,23 @@ struct UpdateInstallerInstallTests {
     }
 
     static func run(_ tool: String, _ arguments: String...) throws {
+        _ = try output(tool, arguments)
+    }
+
+    static func output(_ tool: String, _ arguments: String...) throws -> Data {
+        try output(tool, arguments)
+    }
+
+    static func output(_ tool: String, _ arguments: [String]) throws -> Data {
         let process = Process()
+        let pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: tool)
         process.arguments = arguments
-        process.standardOutput = FileHandle.nullDevice
+        process.standardOutput = pipe
         try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         try #require(process.terminationStatus == 0, "\(tool) \(arguments.joined(separator: " "))")
+        return data
     }
 }
