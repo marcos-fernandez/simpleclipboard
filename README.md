@@ -21,22 +21,29 @@ memory only and disappears after 10 minutes.
 
 ### From the terminal
 
-A browser marks what it downloads as quarantined, which is what makes macOS refuse the app; `curl` and `gh` do not,
-so an app installed this way opens without "Open Anyway". The same commands update an installed copy.
+A browser marks what it downloads as quarantined, which is what makes macOS refuse the app; `curl` does not, so an
+app installed this way opens without "Open Anyway". The same command updates an installed copy. It works in a new
+temporary folder, and stops at the first step that fails:
 
 ```bash
+bash -euo pipefail <<'SCRIPT'
+cd "$(mktemp -d)"
 version="$(curl -fsSL https://api.github.com/repos/marcos-fernandez/simpleclipboard/releases/latest \
     | sed -n 's/.*"tag_name": *"v\([0-9.]*\)".*/\1/p')"
-releases="https://github.com/marcos-fernandez/simpleclipboard/releases/download"
-curl -fLO "${releases}/v${version}/SimpleClipboard-${version}-universal.dmg"
-# or, with the GitHub CLI: gh release download -R marcos-fernandez/simpleclipboard -p '*-universal.dmg'
-mount_point="$(mktemp -d)"
-hdiutil attach -nobrowse -readonly -mountpoint "${mount_point}" SimpleClipboard-*-universal.dmg
-osascript -e 'quit app "SimpleClipboard"' || true   # a normal quit, so the last changes are written
-ditto "${mount_point}/SimpleClipboard.app" /Applications/SimpleClipboard.app
-hdiutil detach "${mount_point}"
+image="SimpleClipboard-${version:?cannot find the latest version}-universal.dmg"
+curl -fLO "https://github.com/marcos-fernandez/simpleclipboard/releases/download/v${version}/${image}"
+hdiutil attach -nobrowse -readonly -mountpoint mount "${image}"
+# A normal quit, so the last changes are written; replaced whole, so no file of the old version stays in the app.
+if pgrep -xq SimpleClipboard; then osascript -e 'quit app "SimpleClipboard"'; fi
+rm -rf /Applications/SimpleClipboard.app
+ditto mount/SimpleClipboard.app /Applications/SimpleClipboard.app
+hdiutil detach mount
 open /Applications/SimpleClipboard.app
+SCRIPT
 ```
+
+With the GitHub CLI, `gh release download -R marcos-fernandez/simpleclipboard -p '*-universal.dmg'` downloads the
+disk image without quarantine too.
 
 ### Updates
 
