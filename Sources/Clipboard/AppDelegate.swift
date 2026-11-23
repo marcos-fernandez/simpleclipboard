@@ -73,9 +73,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         PickAction(stored: UserDefaults.standard.string(forKey: Self.pickActionKey))
     }
 
-    /// The saved setting, not whether the item is on show (see `MenuBarIcon`).
-    private var showsMenuBarIcon: Bool {
-        UserDefaults.standard.object(forKey: Self.showsMenuBarIconKey) as? Bool ?? true
+    /// The saved "Show in Menu Bar", missing until the user changes it (see `MenuBarIcon`).
+    private var storedShowsMenuBarIcon: Bool? {
+        UserDefaults.standard.object(forKey: Self.showsMenuBarIconKey) as? Bool
+    }
+
+    /// Whether the menu-bar item is on show, which the setting alone does not decide.
+    private var isMenuBarIconShown: Bool {
+        MenuBarIcon.isShown(stored: storedShowsMenuBarIcon, hotkeyRegistered: hotkeyRegistered)
     }
 
     private var lastBackupDate: Date? {
@@ -221,6 +226,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Opening the app again (Finder, Spotlight, `open`) shows the history, whose wrench opens the menu. It is the way
+    /// in that is left with the menu-bar icon hidden, by the setting or by macOS, and ⇧⌘V taken by another app:
+    /// registering it succeeds even then.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        panel.show()
+        return false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         // The last copies may still be converting, and the last changes on their way to disk.
         monitor.flush()
@@ -289,7 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Shows or hides the menu-bar item, and the wrench of the history that stands in for it.
     private func applyMenuBarIconSetting() {
-        let isShown = MenuBarIcon.isShown(stored: showsMenuBarIcon, hotkeyRegistered: hotkeyRegistered)
+        let isShown = isMenuBarIconShown
         // Hidden, not removed: it comes back in the place the user gave it in the menu bar.
         statusItem.isVisible = isShown
         panel.showsMenuButton = !isShown
@@ -708,7 +721,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsState.opensAtLogin = SMAppService.mainApp.status == .enabled
         settingsState.pickAction = pickAction
         settingsState.isAccessibilityGranted = AXIsProcessTrusted()
-        settingsState.showsMenuBarIcon = showsMenuBarIcon
+        // Whether the item is on show and not the saved setting: without ⇧⌘V the icon stays, and a switch reading
+        // off would say otherwise.
+        settingsState.showsMenuBarIcon = isMenuBarIconShown
+        settingsState.canHideMenuBarIcon = hotkeyRegistered
     }
 
     private func addIgnoredApps() {

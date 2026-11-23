@@ -2,6 +2,15 @@ import Testing
 @testable import ClipboardCore
 
 struct MenuBarIconTests {
+    @Test func withoutASavedChoiceTheSettingIsOnAsBeforeItExisted() {
+        #expect(MenuBarIcon.isOn(stored: nil))
+    }
+
+    @Test func theSavedChoiceIsTheSetting() {
+        #expect(MenuBarIcon.isOn(stored: true))
+        #expect(!MenuBarIcon.isOn(stored: false))
+    }
+
     @Test func withoutASavedChoiceTheIconIsShownAsBeforeTheSettingExisted() {
         #expect(MenuBarIcon.isShown(stored: nil, hotkeyRegistered: true))
     }

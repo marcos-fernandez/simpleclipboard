@@ -57,7 +57,8 @@ right-click a card or a tab for more options.
 
 - **General**: open at login; "Show in Menu Bar", which hides the menu-bar icon when off: its menu then opens from a
   wrench to the left of the search field of the history (`⇧⌘V`). If `⇧⌘V` cannot be registered the icon stays, as
-  nothing else would open the app. And what happens when an item is picked: "Paste Directly" (the default) or "Copy to
+  nothing else would open the app. Opening the app again (from Finder or Spotlight) also shows the history, for when
+  another app has taken `⇧⌘V`. And what happens when an item is picked: "Paste Directly" (the default) or "Copy to
   Clipboard", which leaves the pasting to you.
 - **Privacy**: "Never Copy From", the apps whose copies are not kept in the history. Keychain Access is there from
   the start; `+` adds apps and `−` removes the selected one, Keychain Access too.
