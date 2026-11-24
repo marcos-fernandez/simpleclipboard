@@ -47,8 +47,16 @@ public enum Config {
         string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
     )!
 
-    /// Shown in the About pane of the settings.
-    public static let authorName = "Marcos Fernández"
+    /// Whose app it is, as the About pane of the settings names them.
+    public static let author = Author(
+        name: "Marcos Fernández",
+        profileURL: URL(string: "https://github.com/marcos-fernandez")!
+    )
+    /// Who else works on the app, in alphabetical order: none of them comes first.
+    public static let contributors = [
+        Author(name: "Guillem Parera", profileURL: URL(string: "https://github.com/parera10")!),
+        Author(name: "Joan Batet", profileURL: URL(string: "https://github.com/jobace78")!),
+    ]
     public static let repositoryURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard")!
     /// Built here, never taken from the response: the menu item only ever opens this page.
     public static let releasesPageURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard/releases/latest")!

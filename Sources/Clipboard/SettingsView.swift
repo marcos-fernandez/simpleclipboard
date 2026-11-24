@@ -143,6 +143,9 @@ struct SettingsView: View {
     @Environment(\.controlActiveState) private var controlActiveState
 
     private static let aboutIconSize: CGFloat = 96
+    /// Between the version, the people and the link.
+    private static let aboutSectionSpacing: CGFloat = 14
+    private static let aboutWordSpacing: CGFloat = 4
     /// The bundle's version, which does not change while the app runs.
     private static let versionText = AboutInfo.versionText(
         shortVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -251,9 +254,22 @@ struct SettingsView: View {
             Text(Self.versionText)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
-            Text("By \(Config.authorName)")
-                .padding(.top, 8)
-            Link(Config.repositoryURL.absoluteString, destination: Config.repositoryURL)
+            HStack(spacing: Self.aboutWordSpacing) {
+                Text("Made by")
+                    .foregroundStyle(.secondary)
+                Link(Config.author.name, destination: Config.author.profileURL)
+            }
+            .padding(.top, Self.aboutSectionSpacing)
+            Text("Contributors")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.top, Self.aboutSectionSpacing)
+            ForEach(Config.contributors, id: \.name) { contributor in
+                Link(contributor.name, destination: contributor.profileURL)
+            }
+            // Not the address itself: it carries the name of one of them.
+            Link("View on GitHub", destination: Config.repositoryURL)
+                .padding(.top, Self.aboutSectionSpacing)
         }
         .frame(maxWidth: .infinity)
         .padding(Self.headerInset)
