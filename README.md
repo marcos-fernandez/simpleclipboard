@@ -98,6 +98,8 @@ Universal Clipboard hands it from this one, and with sync between Macs that come
   another app has taken `⇧⌘V`; an item picked there is only copied, as SimpleClipboard is then the app in front.
   And what happens when an item is picked: "Paste Directly" or "Copy to Clipboard", which leaves the pasting to
   you.
+  "Reset All Settings…" puts the settings back to their defaults and restarts the app, which then asks again how
+  to paste and whether to open at login; the history, the tags and the backup stay as they are.
 - **Privacy**: two lists of apps. "Ignored Apps": what you copy from them is not kept in the history; Keychain
   Access is there from the start. "Secured Apps": what you copy from them is kept hidden, in memory only, and never
   reaches the backup or the other Macs; 1Password and Passwords are there from the start. "Keep For" sets how long

@@ -115,6 +115,7 @@ struct SettingsActions {
     let addApps: @MainActor (PrivacyList) -> Void
     let openAccessibilitySettings: @MainActor () -> Void
     let removeApp: @MainActor (String, PrivacyList) -> Void
+    let resetAllSettings: @MainActor () -> Void
     let resetPrivacy: @MainActor () -> Void
     let setOpensAtLogin: @MainActor (Bool) -> Void
     let setPickAction: @MainActor (PickAction) -> Void
@@ -441,6 +442,11 @@ struct SettingsView: View {
                         caption: "The item goes to the clipboard and you paste it manually."
                     )
                 }
+            }
+            // A section of its own: the button stands apart from the settings it resets.
+            Section {
+                Button("Reset All Settings…", action: actions.resetAllSettings)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .formStyle(.grouped)
