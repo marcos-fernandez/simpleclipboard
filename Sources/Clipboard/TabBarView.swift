@@ -24,7 +24,7 @@ struct TabBarView: View {
             ForEach(store.tags) { tag in
                 tab(title: tag.name, color: TagPalette.color(tag.colorIndex), scope: .tag(tag.id), active: active)
                     .overlay {
-                        AppKitContextMenu {
+                        AppKitContextMenu { _ in
                             TagTabMenu.menu(
                                 colorIndex: tag.colorIndex,
                                 onDelete: { state.overlay = .deleteTag(tagID: tag.id) },

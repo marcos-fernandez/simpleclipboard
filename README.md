@@ -52,6 +52,12 @@ Code Signing).
 `⌘1`…`⌘9` the same for the card with that number · `⌘⌫` delete · `Esc` clear the search, or close · `⌘←` `⌘→` switch
 tab · `⌘T` tag · right-click a card or a tab for more options.
 
+The header of a card has the colour of its tag or, without one, that of the icon of the app it was copied from, next
+to that icon; it stays grey for an icon without a colour of its own, a grey one or one of several colours. The cards
+are black in the dark appearance of the system and white in the light one. The selected card can be shared from the
+button at the end of the search row, and any card from its menu, through the share menu of macOS; not the ones copied
+from the "Secured Apps".
+
 The history opens with the keyboard on its cards, at most nine in view. A search, and the tab it was made in, are
 still there when the history is opened again, until a card is picked: closing it by mistake does not lose them.
 

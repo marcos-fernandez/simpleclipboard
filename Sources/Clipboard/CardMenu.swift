@@ -8,12 +8,17 @@ enum CardMenu {
     /// Of the dot of a tag as the image of its menu item, which a menu draws smaller than text.
     private static let dotSize: CGFloat = 10
 
+    /// `card`: the view of the card, which the share menu comes out of. `shareItems`: what the card shares, asked
+    /// when "Share…" is chosen and not before, since an image is read whole from the disk; nil for a card with
+    /// nothing to share (one from a secured app, an image whose file is gone).
     static func menu(
+        card: NSView,
         item: ClipItem,
         tags: [Tag],
         onDelete: @escaping () -> Void,
         onNewTag: @escaping () -> Void,
-        onSetTag: @escaping (UUID?) -> Void
+        onSetTag: @escaping (UUID?) -> Void,
+        shareItems: (() -> [Any])?
     ) -> NSMenu {
         let delete = ActionMenuItem(title: "Delete", handler: onDelete)
         let menu = NSMenu()
@@ -50,6 +55,16 @@ enum CardMenu {
         menu.addItem(tag)
         menu.addItem(removeTag)
         menu.addItem(.separator())
+        // The system's share menu comes out of the card once this menu has closed, as it comes out of the share
+        // button: the system's ready-made share item does nothing in a menu of this panel.
+        if let shareItems {
+            menu.addItem(ActionMenuItem(title: "Share…") { [weak card] in
+                if let card {
+                    SharePicker.shared.show(shareItems(), from: card)
+                }
+            })
+            menu.addItem(.separator())
+        }
         menu.addItem(delete)
         return menu
     }
