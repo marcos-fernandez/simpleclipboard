@@ -1,6 +1,6 @@
 import Foundation
 
-/// One of the people who make the app, and where to find them.
+/// Someone who makes the app, its author or a contributor, and where to find them.
 public struct Author: Equatable, Sendable {
     public let name: String
     public let profileURL: URL

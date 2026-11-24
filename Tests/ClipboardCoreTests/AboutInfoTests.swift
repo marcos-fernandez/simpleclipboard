@@ -13,15 +13,18 @@ struct AboutInfoTests {
         #expect(AboutInfo.versionText(shortVersion: "") == "Development build")
     }
 
-    @Test func theAuthorsAreNamedInAlphabeticalOrder() {
-        // The app is made by several people: the order must not say that one of them comes first.
-        let names = Config.authors.map(\.name)
-        #expect(names.count > 1)
+    @Test func theContributorsAreNamedInAlphabeticalOrder() {
+        // The order must not say that one of them comes first.
+        let names = Config.contributors.map(\.name)
         #expect(names == names.sorted { $0.localizedStandardCompare($1) == .orderedAscending })
     }
 
-    @Test func everyAuthorLinksToADifferentProfileOnGitHub() {
-        let profiles = Config.authors.map(\.profileURL.absoluteString)
+    @Test func theAuthorIsNotNamedAgainAmongTheContributors() {
+        #expect(!Config.contributors.contains(Config.author))
+    }
+
+    @Test func everyoneLinksToADifferentProfileOnGitHub() {
+        let profiles = ([Config.author] + Config.contributors).map(\.profileURL.absoluteString)
         #expect(profiles.allSatisfy { $0.hasPrefix("https://github.com/") })
         #expect(Set(profiles).count == profiles.count)
     }
