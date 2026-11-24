@@ -21,7 +21,8 @@ the time chosen there.
 3. Grant the Accessibility permission when asked (see Permissions).
 
 The app checks GitHub for a new release shortly after launch and then once a day. When there is one, the menu-bar
-icon changes and the menu shows "Update Available", which opens the release page; nothing is downloaded or installed.
+icon (or the wrench, when it is hidden) changes and the menu shows "Update Available", which opens the release page;
+nothing is downloaded or installed.
 This is the only network request the app makes, and nothing from the clipboard is sent.
 
 ## Build and install
@@ -48,15 +49,29 @@ Code Signing).
 
 ## Usage
 
-`⇧⌘V` opens the history · `←` `→` navigate · type to search · `Enter` paste or copy (see Settings) ·
-`⌘1`…`⌘0` the same for the card with that number · `⌘⌫` delete · `Esc` close · `⌘←` `⌘→` switch tab · `⌘T` tag ·
-right-click a card or a tab for more options.
+`⇧⌘V` opens the history · `←` `→` navigate · type to search (or `⌘F`) · `Enter` paste or copy (see Settings) ·
+`⌘1`…`⌘9` the same for the card with that number · `⌘⌫` delete · `Esc` clear the search, or close · `⌘←` `⌘→` switch
+tab · `⌘T` tag · right-click a card or a tab for more options.
+
+The header of a card has the colour of its tag or, without one, that of the icon of the app it was copied from, next
+to that icon; it stays grey for an icon without a colour of its own, a grey one or one of several colours. The cards
+are black in the dark appearance of the system and white in the light one. The selected card can be shared from the
+button at the end of the search row, and any card from its menu, through the share menu of macOS; not the ones copied
+from the "Secured Apps".
+
+The history opens with the keyboard on its cards, at most nine in view. A search, and the tab it was made in, are
+still there when the history is opened again, until a card is picked: closing it by mistake does not lose them.
 
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open) opens a window with a pane per row of its sidebar
 (`↑` `↓` change pane, unless a list has the focus):
 
-- **General**: open at login, and what happens when an item is picked: "Paste Directly" (the default) or "Copy to
-  Clipboard", which leaves the pasting to you.
+- **About**: the version, the author and a link to this repository.
+- **General**: open at login; "Show in Menu Bar", which hides the menu-bar icon when off: its menu then opens from a
+  wrench to the left of the search field of the history (`⇧⌘V`). If `⇧⌘V` cannot be registered the icon stays, as
+  nothing else would open the app. Opening the app again (from Finder or Spotlight) also shows the history, for when
+  another app has taken `⇧⌘V`; an item picked there is only copied, as SimpleClipboard is then the app in front.
+  And what happens when an item is picked: "Paste Directly" (the default) or "Copy to Clipboard", which leaves the
+  pasting to you.
 - **Privacy**: two lists of apps. "Ignored Apps": what you copy from them is not kept in the history; Keychain
   Access is there from the start. "Secured Apps": what you copy from them is kept hidden, in memory only, and never
   reaches the backup or the other Macs; 1Password and Passwords are there from the start. "Keep For" sets how long

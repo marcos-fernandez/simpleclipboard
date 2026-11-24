@@ -1,8 +1,9 @@
 /// The shortcuts that pick the cards in view of the history strip: ⌘ with a digit, in the order of the number row.
 /// They follow the strip as it scrolls: ⌘1 is always the first card in view.
 public enum CardShortcuts {
-    /// 0 is the tenth: its key comes after the 9.
-    public static let digits = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]
+    /// Without the 0: its key comes after the 9 and would be the tenth, but its number says otherwise. The strip
+    /// shows no more cards than these (see `StripLayout`).
+    public static let digits = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
     /// How many cards, from the first in view, have a shortcut: the ones that fit on the screen, as far as there are
     /// digits. A card that is off the screen has none: its shortcut would paste something the user does not see.

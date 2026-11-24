@@ -23,8 +23,15 @@ struct TabBarView: View {
             tab(title: "History", color: nil, scope: .history, active: active)
             ForEach(store.tags) { tag in
                 tab(title: tag.name, color: TagPalette.color(tag.colorIndex), scope: .tag(tag.id), active: active)
-                    .contextMenu {
-                        tabMenu(for: tag)
+                    .overlay {
+                        AppKitContextMenu { _ in
+                            TagTabMenu.menu(
+                                colorIndex: tag.colorIndex,
+                                onDelete: { state.overlay = .deleteTag(tagID: tag.id) },
+                                onRecolor: { store.recolorTag(id: tag.id, colorIndex: $0) },
+                                onRename: { state.startRename(tag) }
+                            )
+                        }
                     }
             }
         }
@@ -38,9 +45,7 @@ struct TabBarView: View {
         } label: {
             HStack(spacing: 5) {
                 if let color {
-                    Circle()
-                        .fill(color)
-                        .frame(width: 8, height: 8)
+                    TagDot(color: color, size: TagDot.tabSize)
                 }
                 Text(title)
                     .font(.callout)
@@ -58,23 +63,5 @@ struct TabBarView: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private func tabMenu(for tag: Tag) -> some View {
-        Button("Rename…") {
-            state.startRename(tag)
-        }
-        Menu("Color") {
-            ForEach(TagPalette.colors.indices, id: \.self) { index in
-                Button(TagPalette.names[index]) {
-                    store.recolorTag(id: tag.id, colorIndex: index)
-                }
-            }
-        }
-        Divider()
-        Button("Delete Tag…", role: .destructive) {
-            state.overlay = .deleteTag(tagID: tag.id)
-        }
     }
 }

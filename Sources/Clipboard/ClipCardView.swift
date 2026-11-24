@@ -3,6 +3,9 @@ import ClipboardCore
 import SwiftUI
 
 struct ClipCardView: View {
+    /// The colour of the icon of the app the card was copied from, when it has one: for the header of a card
+    /// without a tag.
+    let appColor: Color?
     let item: ClipItem
     let image: NSImage?
     let isSelected: Bool
@@ -11,6 +14,8 @@ struct ClipCardView: View {
     let shortcut: String?
     /// Set by the strip so that a whole number of cards fills the screen.
     let width: CGFloat
+
+    @Environment(\.colorScheme) private var colorScheme
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
@@ -25,8 +30,10 @@ struct ClipCardView: View {
             header
                 .padding(.horizontal, PanelMetrics.cardPadding)
                 .frame(height: PanelMetrics.cardHeaderHeight)
+                // The colour of its tag says more about a card than the one of its app, which is there for the
+                // cards without a tag; the grey is for an app whose icon has no colour.
                 .background(
-                    tagColor.map { AnyShapeStyle($0.opacity(0.45)) }
+                    (tagColor ?? appColor).map { AnyShapeStyle($0.opacity(PanelMetrics.cardHeaderTint)) }
                         ?? AnyShapeStyle(HierarchicalShapeStyle.quaternary)
                 )
             content
@@ -35,7 +42,14 @@ struct ClipCardView: View {
             footer
         }
         .frame(width: width, height: PanelMetrics.cardHeight)
-        .background(.background, in: RoundedRectangle(cornerRadius: PanelMetrics.cardCornerRadius))
+        // Black or white with the appearance of the system, and not the grey of a window's background: the cards
+        // stand out from the strip, and what they hold is read on the paper it would be read on.
+        .background(
+            colorScheme == .dark
+                ? Color.black
+                : Color.white,
+            in: RoundedRectangle(cornerRadius: PanelMetrics.cardCornerRadius)
+        )
         .clipShape(RoundedRectangle(cornerRadius: PanelMetrics.cardCornerRadius))
         .overlay(
             RoundedRectangle(cornerRadius: PanelMetrics.cardCornerRadius)
@@ -69,9 +83,13 @@ struct ClipCardView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(nsImage: appIcon)
-                .resizable()
-                .frame(width: PanelMetrics.cardIconSize, height: PanelMetrics.cardIconSize)
+            // Not on a card whose header is in the colour of its tag: without the icon of the app it is told apart
+            // from the others at once. By the colour and not by the tag of the item, so the two never disagree.
+            if tagColor == nil {
+                Image(nsImage: AppIcons.icon(bundleID: item.sourceAppBundleID))
+                    .resizable()
+                    .frame(width: PanelMetrics.cardIconSize, height: PanelMetrics.cardIconSize)
+            }
             Text(item.sourceAppName ?? "Unknown")
                 .font(.callout.bold())
                 .lineLimit(1)
@@ -121,25 +139,5 @@ struct ClipCardView: View {
             return "expires in \(minutes) min"
         }
         return Self.relativeFormatter.localizedString(for: item.createdAt, relativeTo: date)
-    }
-
-    /// Icons by bundle ID: body runs for every visible card on every change, and the NSWorkspace lookup is slow.
-    /// Apps that are not found are cached with the fallback too, so they are not looked up again.
-    @MainActor private static var iconCache: [String: NSImage] = [:]
-    @MainActor private static let fallbackIcon = NSImage(systemSymbolName: "app", accessibilityDescription: nil)
-        ?? NSImage()
-
-    private var appIcon: NSImage {
-        guard let bundleID = item.sourceAppBundleID else {
-            return Self.fallbackIcon
-        }
-        if let cached = Self.iconCache[bundleID] {
-            return cached
-        }
-        let icon = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
-            .map { NSWorkspace.shared.icon(forFile: $0.path) }
-            ?? Self.fallbackIcon
-        Self.iconCache[bundleID] = icon
-        return icon
     }
 }
