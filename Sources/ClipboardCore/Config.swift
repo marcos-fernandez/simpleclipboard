@@ -52,6 +52,12 @@ public enum Config {
     public static let repositoryURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard")!
     /// Built here, never taken from the response: the menu item only ever opens this page.
     public static let releasesPageURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard/releases/latest")!
+    /// Where each release's disk image is; `UpdateInstaller.diskImageURL(for:)` adds the tag and the file name.
+    public static let releaseDownloadBaseURL = URL(
+        string: "https://github.com/marcos-fernandez/simpleclipboard/releases/download/"
+    )!
+    /// For the whole disk image, a few MB: far longer than the check, which only fetches a small JSON.
+    public static let updateDownloadTimeout: TimeInterval = 300
     public static let latestReleaseAPIURL = URL(
         string: "https://api.github.com/repos/marcos-fernandez/simpleclipboard/releases/latest"
     )!
