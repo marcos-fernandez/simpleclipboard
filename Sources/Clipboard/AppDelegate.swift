@@ -256,6 +256,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 addApps: { [weak self] list in
                     self?.addApps(to: list)
                 },
+                checkForUpdates: { [weak self] in
+                    self?.checkForUpdate(askedByUser: true)
+                },
                 openAccessibilitySettings: {
                     NSWorkspace.shared.open(Config.accessibilitySettingsURL)
                 },
@@ -621,9 +624,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         RunLoop.main.add(launchTimer, forMode: .common)
     }
 
-    private func checkForUpdate() {
-        guard UpdateCheck.isDue(lastAnswer: lastUpdateAnswer, now: Date()) else {
+    /// `askedByUser`: from the About pane of the settings. Checks whenever the last answer came, and the pane shows
+    /// how it went.
+    private func checkForUpdate(askedByUser: Bool = false) {
+        guard askedByUser || UpdateCheck.isDue(lastAnswer: lastUpdateAnswer, now: Date()) else {
             return
+        }
+        if askedByUser {
+            settingsState.updateCheck = .checking
         }
         let session = updateSession
         let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -633,6 +641,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 try await session.data(from: Config.latestReleaseAPIURL)
             }
             self?.showUpdate(result)
+            if askedByUser {
+                self?.settingsState.updateCheck = .answered(result)
+            } else if result != .failed, self?.settingsState.updateCheck != .checking {
+                // A later answer has come: the one on show in the pane is old.
+                self?.settingsState.updateCheck = .notAsked
+            }
         }
     }
 
@@ -667,6 +681,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .installed(let version):
             updateItem.title = "Restart to Update to \(version)"
             updateItem.isEnabled = true
+        }
+        // An update on its way is not looked for again: `showUpdate` would leave the answer aside.
+        if case .idle = updateInstallState {
+            settingsState.canCheckForUpdates = true
+        } else {
+            settingsState.canCheckForUpdates = false
+            // "Install it from the menu" is no longer so.
+            settingsState.updateCheck = .notAsked
         }
     }
 
