@@ -20,7 +20,8 @@ memory only and disappears after 10 minutes.
 3. Grant the Accessibility permission when asked (see Permissions).
 
 The app checks GitHub for a new release shortly after launch and then once a day. When there is one, the menu-bar
-icon changes and the menu shows "Update Available", which opens the release page; nothing is downloaded or installed.
+icon (or the wrench, when it is hidden) changes and the menu shows "Update Available", which opens the release page;
+nothing is downloaded or installed.
 This is the only network request the app makes, and nothing from the clipboard is sent.
 
 ## Build and install
@@ -55,12 +56,20 @@ The history opens with the keyboard on its cards, at most nine in view. A search
 still there when the history is opened again, until a card is picked: closing it by mistake does not lose them.
 
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open) opens a window with a pane per row of its sidebar
-(`↑` `↓` change pane):
+(`↑` `↓` change pane, unless a list has the focus):
 
-- **General**: open at login, and what happens when an item is picked: "Paste Directly" (the default) or "Copy to
-  Clipboard", which leaves the pasting to you.
+- **About**: the version, the author and a link to this repository.
+- **General**: open at login; "Show in Menu Bar", which hides the menu-bar icon when off: its menu then opens from a
+  wrench to the left of the search field of the history (`⇧⌘V`). If `⇧⌘V` cannot be registered the icon stays, as
+  nothing else would open the app. Opening the app again (from Finder or Spotlight) also shows the history, for when
+  another app has taken `⇧⌘V`; an item picked there is only copied, as SimpleClipboard is then the app in front.
+  And what happens when an item is picked: "Paste Directly" (the default) or "Copy to Clipboard", which leaves the
+  pasting to you.
 - **Privacy**: "Never Copy From", the apps whose copies are not kept in the history. Keychain Access is there from
-  the start; `+` adds apps and `−` removes the selected one, Keychain Access too.
+  the start; `+` adds apps and `−` or `⌫` remove the selected one, Keychain Access too.
+  The list goes by the app in front when you copy: a copy made from a menu-bar icon, or by an app working in the
+  background, is not recognised as coming from that app and is kept. What was copied from an app before it was
+  added stays in the history. Each Mac has its own list: with sync between Macs, add the app on every one.
 
 With the Settings window in front, a picked item is only copied.
 
