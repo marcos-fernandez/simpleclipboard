@@ -6,6 +6,9 @@ enum PanelMetrics {
     static let cardCornerRadius: CGFloat = 12
     static let cardFooterHeight: CGFloat = 24
     static let cardHeaderHeight: CGFloat = 48
+    /// How much of the colour of its tag, or of its app, the header of a card takes: a tint, light enough for the
+    /// text over it to be read on any of the colours.
+    static let cardHeaderTint: CGFloat = 0.45
     static let cardHeight: CGFloat = 220
     static let cardIconSize: CGFloat = 24
     static let cardPadding: CGFloat = 8
@@ -18,6 +21,11 @@ enum PanelMetrics {
     static let rowInset: CGFloat = 4
     /// The row of the search field and the tabs.
     static let searchRowHeight: CGFloat = 30
+    /// Between the search field, the tabs and the share button.
+    static let searchRowSpacing: CGFloat = 12
+    /// The share button at the end of the search row, and what is kept clear for it at both ends of the row, so
+    /// that the field and the tabs stay centred.
+    static let shareButtonSize: CGFloat = 28
     static let stripPadding: CGFloat = 16
     /// Between the search row and the cards.
     static let stripSpacing: CGFloat = 12

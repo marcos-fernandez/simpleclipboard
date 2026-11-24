@@ -14,13 +14,19 @@ final class ClipboardMonitor {
     private var timer: Timer?
     /// Apps that lost focus since the previous poll (e.g. 1Password handing focus back to the browser).
     private var recentlyDeactivated: Set<String> = []
+    private let concealedSourceBundleIDs: @MainActor () -> Set<String>
     private let ignoredSourceBundleIDs: @MainActor () -> Set<String>
     /// Whether recording is stopped ("Pause" in the menu). Asked at every copy; nil is never.
     var isPaused: (@MainActor () -> Bool)?
 
-    /// `ignoredSourceBundleIDs`: the apps nothing is copied from. Asked at every copy, so a change in the settings
-    /// counts from the next one.
-    init(store: HistoryStore, ignoredSourceBundleIDs: @escaping @MainActor () -> Set<String>) {
+    /// `concealedSourceBundleIDs`: the apps whose copies are kept hidden; `ignoredSourceBundleIDs`: the apps nothing
+    /// is copied from. Both asked at every copy, so a change in the settings counts from the next one.
+    init(
+        store: HistoryStore,
+        concealedSourceBundleIDs: @escaping @MainActor () -> Set<String>,
+        ignoredSourceBundleIDs: @escaping @MainActor () -> Set<String>
+    ) {
+        self.concealedSourceBundleIDs = concealedSourceBundleIDs
         self.ignoredSourceBundleIDs = ignoredSourceBundleIDs
         captures = CaptureQueue(store: store) { tiff in
             NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
@@ -65,6 +71,7 @@ final class ClipboardMonitor {
             types: types,
             sourceBundleID: frontApp?.bundleIdentifier,
             recentSourceBundleIDs: recentSourceBundleIDs,
+            concealedSourceBundleIDs: concealedSourceBundleIDs(),
             ignoredSourceBundleIDs: ignoredSourceBundleIDs()
         )
         guard classification != .ignore, let capture = readCapture() else {

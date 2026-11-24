@@ -13,12 +13,14 @@ public enum PasteboardClassifier {
     ]
 
     /// `recentSourceBundleIDs`: apps that lost focus since the previous poll; the copy may have come from them.
-    /// `ignoredSourceBundleIDs`: the apps nothing is copied from (see `IgnoredApps`).
+    /// `concealedSourceBundleIDs`: the apps whose copies are kept hidden ("Secured Apps", see `AppList`).
+    /// `ignoredSourceBundleIDs`: the apps nothing is copied from ("Ignored Apps").
     public static func classify(
         types: Set<String>,
         sourceBundleID: String?,
         recentSourceBundleIDs: Set<String> = [],
-        ignoredSourceBundleIDs: Set<String> = Config.ignoredSourceBundleIDs
+        concealedSourceBundleIDs: Set<String>,
+        ignoredSourceBundleIDs: Set<String>
     ) -> Classification {
         if !types.isDisjoint(with: ignoredTypes) {
             return .ignore
@@ -33,10 +35,10 @@ public enum PasteboardClassifier {
         if types.contains(Config.concealedType) {
             return .concealed
         }
-        if let sourceBundleID, Config.concealedSourceBundleIDs.contains(sourceBundleID) {
+        if let sourceBundleID, concealedSourceBundleIDs.contains(sourceBundleID) {
             return .concealed
         }
-        if !recentSourceBundleIDs.isDisjoint(with: Config.concealedSourceBundleIDs) {
+        if !recentSourceBundleIDs.isDisjoint(with: concealedSourceBundleIDs) {
             return .concealed
         }
         return .normal

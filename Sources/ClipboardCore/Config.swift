@@ -15,7 +15,7 @@ public enum Config {
     /// Same as 1Password's own clipboard clearing.
     public static let concealedPasteboardLifetime: TimeInterval = 90
     /// Size of the fixed tag palette (TagPalette in the app).
-    public static let tagColorCount = 8
+    public static let tagColorCount = TagColors.order.count
     /// Automatic iCloud Drive backup, only when something changed.
     public static let backupInterval: TimeInterval = 60 * 60
     /// Also once this long after launch, so a Mac that never runs the app for a whole `backupInterval` backs up too.
@@ -47,6 +47,9 @@ public enum Config {
         string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
     )!
 
+    /// Shown in the About pane of the settings.
+    public static let authorName = "Marcos Fernández"
+    public static let repositoryURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard")!
     /// Built here, never taken from the response: the menu item only ever opens this page.
     public static let releasesPageURL = URL(string: "https://github.com/marcos-fernandez/simpleclipboard/releases/latest")!
     public static let latestReleaseAPIURL = URL(
@@ -62,12 +65,18 @@ public enum Config {
     public static let updateCheckLaunchDelay: TimeInterval = 60
     public static let updateCheckTimeout: TimeInterval = 30
 
+    /// What "Secured Apps" starts from; as with the list below, an app added here later only reaches new installs
+    /// and the users who never changed theirs.
     public static let concealedSourceBundleIDs: Set<String> = [
         "com.1password.1password",
+        // 1Password 7, which later versions replace: hidden by this identifier since before the list could be
+        // changed, so it stays for whoever still uses it.
         "com.agilebits.onepassword7",
         // Apple's Passwords app (macOS 15+): not relied on to mark its copies as concealed.
         "com.apple.Passwords",
     ]
+    /// What "Ignored Apps" starts from. Once the user has changed that list theirs is saved whole, so an app
+    /// added here later only reaches new installs and the users who never touched it.
     public static let ignoredSourceBundleIDs: Set<String> = [
         "com.apple.keychainaccess",
     ]

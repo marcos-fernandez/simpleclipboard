@@ -3,8 +3,9 @@
 Clipboard manager for macOS, with optional backup and sync between Macs through iCloud Drive.
 Items can be tagged into named, coloured collections; tagged items never expire.
 Text and image history,
-search and direct pasting with `⇧⌘V`. Anything copied from 1Password is kept in
-memory only and disappears after 10 minutes.
+search and direct pasting with `⇧⌘V`. Anything copied from a password manager (the "Secured Apps" of the
+settings: 1Password and Passwords from the start) is kept in memory only and disappears after 10 minutes, or
+the time chosen there.
 
 ## Requirements
 
@@ -22,8 +23,9 @@ memory only and disappears after 10 minutes.
 4. Grant the Accessibility permission when asked, if you chose to paste directly (see Permissions).
 
 The app checks GitHub for a new release shortly after launch and then once a day. When there is one, the menu-bar icon
-turns blue, with an arrow, and the menu shows "Update Available…", which opens the release page; nothing is
-downloaded or installed. This is the only network request the app makes, and nothing from the clipboard is sent.
+turns blue, with an arrow (when it is hidden, the wrench turns blue), and the menu shows "Update Available…", which
+opens the release page; nothing is downloaded or installed. This is the only network request the app makes, and
+nothing from the clipboard is sent.
 
 ## Build and install
 
@@ -49,9 +51,18 @@ Code Signing).
 
 ## Usage
 
-`⇧⌘V` opens the history · `←` `→` navigate · type to search · `Enter` paste or copy (see Settings) ·
-`⌘1`…`⌘0` the same for the card with that number · `⌘⌫` delete · `Esc` close · `⌘←` `⌘→` switch tab · `⌘T` tag ·
-right-click a card or a tab for more options.
+`⇧⌘V` opens the history · `←` `→` navigate · type to search (or `⌘F`) · `Enter` paste or copy (see Settings) ·
+`⌘1`…`⌘9` the same for the card with that number · `⌘⌫` delete · `Esc` clear the search, or close · `⌘←` `⌘→` switch
+tab · `⌘T` tag · right-click a card or a tab for more options.
+
+The header of a card has the colour of its tag or, without one, that of the icon of the app it was copied from, next
+to that icon; it stays grey for an icon without a colour of its own, a grey one or one of several colours. The cards
+are black in the dark appearance of the system and white in the light one. The selected card can be shared from the
+button at the end of the search row, and any card from its menu, through the share menu of macOS; not the ones copied
+from the "Secured Apps".
+
+The history opens with the keyboard on its cards, at most nine in view. A search, and the tab it was made in, are
+still there when the history is opened again, until a card is picked: closing it by mistake does not lose them.
 
 "Pause" in the menu-bar menu stops recording for 5, 15 or 30 minutes, or 1, 4 or 8 hours: what you copy meanwhile is
 not kept, then or later. The menu-bar icon is dimmed meanwhile and the menu says until when; "Resume", in that same
@@ -60,12 +71,27 @@ the pause. A pause is of this Mac only: another Mac of yours that is not paused 
 Universal Clipboard hands it from this one, and with sync between Macs that comes back here.
 
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open) opens a window with a pane per row of its sidebar
-(`↑` `↓` change pane):
+(`↑` `↓` change pane, unless a list has the focus):
 
-- **General**: open at login, and what happens when an item is picked: "Paste Directly" or "Copy to Clipboard",
-  which leaves the pasting to you.
-- **Privacy**: "Never Copy From", the apps whose copies are not kept in the history. Keychain Access is there from
-  the start; `+` adds apps and `−` removes the selected one, Keychain Access too.
+- **About**: the version, the author and a link to this repository.
+- **General**: open at login; "Show in Menu Bar", which hides the menu-bar icon when off: its menu then opens from a
+  wrench to the left of the search field of the history (`⇧⌘V`). If `⇧⌘V` cannot be registered the icon stays, as
+  nothing else would open the app. Opening the app again (from Finder or Spotlight) also shows the history, for when
+  another app has taken `⇧⌘V`; an item picked there is only copied, as SimpleClipboard is then the app in front.
+  And what happens when an item is picked: "Paste Directly" or "Copy to Clipboard", which leaves the pasting to
+  you.
+- **Privacy**: two lists of apps. "Ignored Apps": what you copy from them is not kept in the history; Keychain
+  Access is there from the start. "Secured Apps": what you copy from them is kept hidden, in memory only, and never
+  reaches the backup or the other Macs; 1Password and Passwords are there from the start. "Keep For" sets how long
+  it is kept: 1, 5, 10 (the default) or 30 minutes, counted for what is copied from then on. In both lists, `+`
+  adds apps and `−` or `⌫` remove the selected one, the ones from the start too. An app shows in one list only,
+  and ignored wins: adding a secured app to the ignored ones hides it among the secured, where it shows again once
+  it is no longer ignored; adding an ignored app to the secured ones is refused. A list you have changed is yours
+  from then on: an app that a later version adds to the ones from the start does not reach it. "Reset to
+  Defaults…" leaves the lists and the time as a new install has them, with whatever that version starts from.
+  The lists go by the app in front when you copy: a copy made from a menu-bar icon, or by an app working in the
+  background, is not recognised as coming from that app and is kept as any other. What was copied from an app
+  before it was added stays as it was. Each Mac has its own lists: with sync between Macs, add the app on every one.
 
 With the Settings window in front, a picked item is only copied.
 
@@ -75,7 +101,7 @@ With the Settings window in front, a picked item is only copied.
 Changes are written in the background right after they happen; quitting the app writes any still on their way, and a
 crash or power cut can only lose those (normally the last fraction of a second).
 The last 1000 untagged items or 30 days. Tagged items are kept unless you delete them
-(`⌘⌫`) or copy the same value from 1Password (it then becomes an in-memory-only
+(`⌘⌫`) or copy the same value from one of the "Secured Apps" (it then becomes an in-memory-only
 copy). "Clear History…" deletes only untagged items. Each save also writes a copy of
 `history.json` and `tags.json` as `.prev`: if a file is found damaged at launch, it is moved to `.bak` and the
 `.prev` copy is loaded instead. If `tags.json` cannot be recovered either, its items stay tagged
@@ -84,7 +110,7 @@ repaired file).
 
 Backup: `~/Library/Mobile Documents/com~apple~CloudDocs/SimpleClipboard/Backup/`,
 automatic every hour when something changed, or from the menu ("Back Up Now",
-"Restore…"). Anything copied from 1Password is never included. There is a single
+"Restore…"). Anything copied from the "Secured Apps" is never included. There is a single
 backup: if two Macs back up, each one replaces the other's. "Restore" replaces the
 local history and tags. On a new Mac, the existing backup is restored automatically
 only while that Mac has nothing copied yet; once it does, the menu shows "Backup not restored" until you choose
@@ -95,8 +121,8 @@ damaged local file could not be recovered, so it never replaces the backup with 
 Sync between Macs: with "Sync Between Macs" turned on in each Mac (same iCloud account), the
 history and the tags stay the same through `iCloud Drive/SimpleClipboard/Sync/`: whatever is
 copied, deleted or tagged on one shows up on the other once iCloud Drive uploads and downloads the files (from
-seconds to a couple of minutes). Anything copied from 1Password never leaves the Mac. A deletion reaches both Macs; to
-undo it, "Restore…" brings the backup back on both. When it is first turned on
+seconds to a couple of minutes). Anything copied from the "Secured Apps" never leaves the Mac. A deletion reaches
+both Macs; to undo it, "Restore…" brings the backup back on both. When it is first turned on
 on a Mac, its history is joined with the others' without duplicating anything. Tags with the same name
 are merged into one, even if you created them that way on purpose, and so are two tags when one is renamed to the
 other's name. The app is installed on each Mac by building it there.
