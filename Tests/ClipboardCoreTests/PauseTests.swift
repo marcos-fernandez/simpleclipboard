@@ -15,10 +15,17 @@ struct PauseTests {
         #expect(!Pause.isActive(until: end, now: end.addingTimeInterval(1)))
     }
 
-    @Test func anEndFurtherAwayThanTheLongestPauseIsNoPause() {
+    @Test func anEndMuchFurtherAwayThanTheLongestPauseIsNoPause() {
+        // The longest pause and an hour of slack.
+        let furthest = 9.0 * 60 * 60
+        #expect(Pause.isActive(until: end, now: end.addingTimeInterval(-furthest)))
+        #expect(!Pause.isActive(until: end, now: end.addingTimeInterval(-furthest - 1)))
+    }
+
+    @Test func theLongestPauseHoldsWhenTheClockStepsBackALittle() {
+        // Set for eight hours, and the clock is then corrected ten minutes back: it is still a pause.
         let longest = 8.0 * 60 * 60
-        #expect(Pause.isActive(until: end, now: end.addingTimeInterval(-longest)))
-        #expect(!Pause.isActive(until: end, now: end.addingTimeInterval(-longest - 1)))
+        #expect(Pause.isActive(until: end, now: end.addingTimeInterval(-longest - 10 * 60)))
     }
 
     @Test func theDurationsGoFromShortestToLongest() {
