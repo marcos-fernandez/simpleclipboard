@@ -65,13 +65,17 @@ public enum Config {
     public static let updateCheckLaunchDelay: TimeInterval = 60
     public static let updateCheckTimeout: TimeInterval = 30
 
+    /// What "Secured Apps" starts from; as with the list below, an app added here later only reaches new installs
+    /// and the users who never changed theirs.
     public static let concealedSourceBundleIDs: Set<String> = [
         "com.1password.1password",
+        // 1Password 7, which later versions replace: hidden by this identifier since before the list could be
+        // changed, so it stays for whoever still uses it.
         "com.agilebits.onepassword7",
         // Apple's Passwords app (macOS 15+): not relied on to mark its copies as concealed.
         "com.apple.Passwords",
     ]
-    /// What "Never Copy From" starts from. Once the user has changed that list theirs is saved whole, so an app
+    /// What "Ignored Apps" starts from. Once the user has changed that list theirs is saved whole, so an app
     /// added here later only reaches new installs and the users who never touched it.
     public static let ignoredSourceBundleIDs: Set<String> = [
         "com.apple.keychainaccess",
