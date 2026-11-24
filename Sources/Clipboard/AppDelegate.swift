@@ -54,6 +54,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let securedAppsKey = "concealedSourceBundleIDs"
     private static let securedLifetimeKey = "concealedLifetime"
     private static let showsMenuBarIconKey = "showsMenuBarIcon"
+    /// One way of the fade of the menu-bar icon while an update downloads.
+    private static let statusIconPulseDuration: TimeInterval = 0.7
+    private static let statusIconPulseKey = "updateDownloadPulse"
+    private static let statusIconPulseLowestOpacity = 0.25
     /// Set once the question of the first launch has been answered.
     private static let welcomeShownKey = "welcomeShown"
 
@@ -446,24 +450,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The one place that draws the menu-bar icon: with an arrow when a release is out, dimmed while paused.
     private func refreshStatusIcon() {
         let hasUpdate = availableUpdate != nil
+        let isDownloading: Bool
+        if case .downloading = updateInstallState {
+            isDownloading = true
+        } else {
+            isDownloading = false
+        }
         let isOnPause = isPaused
-        let plain = "doc.on.clipboard"
+        let plain = StatusIcon.plainSymbol
         let description = [
             Config.appName,
-            hasUpdate
-                ? "update available"
-                : nil,
+            isDownloading
+                ? "downloading update"
+                : hasUpdate
+                    ? "update available"
+                    : nil,
             isOnPause
                 ? "paused"
                 : nil,
         ].compactMap { $0 }.joined(separator: ", ")
         var icon = NSImage(
-            systemSymbolName: hasUpdate
-                ? "arrow.up.doc.on.clipboard"
-                : plain,
+            systemSymbolName: StatusIcon.symbol(hasUpdate: hasUpdate, isDownloading: isDownloading),
             accessibilityDescription: description
         )
-        if hasUpdate {
+        if hasUpdate || isDownloading {
             // Coloured, so no longer a template image: the arrow alone is too small to notice in the menu bar. Blue
             // is what the system uses for what is new.
             icon = icon?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.systemBlue]))
@@ -473,6 +483,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Paused is the same icon dimmed, as the system dims what is off, and not another symbol: in the menu bar
         // the icon is all that says whose item it is. It still opens the menu.
         statusItem.button?.appearsDisabled = isOnPause
+        setStatusIconPulsing(isDownloading)
+    }
+
+    /// Fades the menu-bar icon out and in while an update downloads: choosing the update closes the menu, and
+    /// without this nothing says for some seconds that anything was started.
+    private func setStatusIconPulsing(_ isPulsing: Bool) {
+        guard let button = statusItem.button else {
+            return
+        }
+        button.wantsLayer = true
+        button.layer?.removeAnimation(forKey: Self.statusIconPulseKey)
+        // With "Reduce motion" the arrow down alone says it.
+        guard isPulsing, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            return
+        }
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 1
+        pulse.toValue = Self.statusIconPulseLowestOpacity
+        pulse.duration = Self.statusIconPulseDuration
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        button.layer?.add(pulse, forKey: Self.statusIconPulseKey)
     }
 
     // MARK: pause
@@ -685,6 +718,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         updateInstallState = .downloading
         refreshUpdateItem()
+        refreshStatusIcon()
         let session = updateDownloadSession
         let app = Bundle.main.bundleURL
         Task { [weak self] in
@@ -703,6 +737,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func updateInstalled(_ version: AppVersion) {
         updateInstallState = .installed(version)
         refreshUpdateItem()
+        refreshStatusIcon()
         let alert = NSAlert()
         alert.messageText = "\(Config.appName) \(version) is installed"
         alert.informativeText = "Restart now to use it, or later: it opens the next time \(Config.appName) starts."
@@ -718,6 +753,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func updateFailed(_ error: UpdateInstallError) {
         updateInstallState = .idle
         refreshUpdateItem()
+        refreshStatusIcon()
         let alert = NSAlert()
         alert.messageText = "Cannot install the update"
         alert.informativeText = Self.describe(error)
