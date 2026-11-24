@@ -56,6 +56,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let showsMenuBarIconKey = "showsMenuBarIcon"
     /// Set once the question of the first launch has been answered.
     private static let welcomeShownKey = "welcomeShown"
+    /// What "Reset All Settings…" removes: what the settings window and the welcome save, and a pause, so the app
+    /// comes back recording. Not the keys of the backup, which say what it has done and are no choice of the user.
+    private static let settingsKeys = [
+        ignoredAppsKey, loginItemRegisteredKey, pausedUntilKey, pickActionKey, securedAppsKey, securedLifetimeKey,
+        showsMenuBarIconKey, welcomeShownKey,
+    ]
 
     private let settingsState = SettingsState()
     private var settings: SettingsWindowController!
@@ -258,6 +264,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 },
                 removeApp: { [weak self] bundleID, list in
                     self?.removeApp(bundleID, from: list)
+                },
+                resetAllSettings: { [weak self] in
+                    self?.resetAllSettings()
                 },
                 resetPrivacy: { [weak self] in
                     self?.resetPrivacy()
@@ -1181,6 +1190,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.concealedLifetime = securedLifetime
         settingsState.selectedAppID = [:]
         refreshSettings()
+    }
+
+    private func resetAllSettings() {
+        let alert = NSAlert()
+        alert.messageText = "Reset all settings?"
+        alert.informativeText = """
+            The settings go back to their defaults and \(Config.appName) restarts, asking again how to paste and \
+            whether to open at login. A pause ends. The history, the tags and the backup are left as they are.
+            """
+        alert.addButton(withTitle: "Reset and Restart")
+        alert.addButton(withTitle: "Cancel")
+        // Only the settings window calls this: the user stays in it (see `setOpensAtLogin`).
+        appInFrontBeforeAlert = .current
+        guard runAlert(alert) == .alertFirstButtonReturn else {
+            handFocusBack()
+            return
+        }
+        // Nothing saved is the defaults. The restart reads it all again, and shows the welcome.
+        for key in Self.settingsKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        restart()
     }
 
     private func setPickAction(_ action: PickAction) {

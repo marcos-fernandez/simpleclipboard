@@ -120,6 +120,7 @@ struct SettingsActions {
     let checkForUpdates: @MainActor () -> Void
     let openAccessibilitySettings: @MainActor () -> Void
     let removeApp: @MainActor (String, PrivacyList) -> Void
+    let resetAllSettings: @MainActor () -> Void
     let resetPrivacy: @MainActor () -> Void
     let setOpensAtLogin: @MainActor (Bool) -> Void
     let setPickAction: @MainActor (PickAction) -> Void
@@ -409,55 +410,64 @@ struct SettingsView: View {
     }
 
     private func general(showsAccessibilityNotice: Bool) -> some View {
-        Form {
-            Section {
-                Toggle(
-                    "Open at Login",
-                    // Called in a closure, not passed as a value: Swift 6.3 (the one that builds the releases) crashes
-                    // converting a @MainActor function to the plain one a Binding takes.
-                    isOn: Binding(get: { state.opensAtLogin }, set: { actions.setOpensAtLogin($0) })
-                )
-                // A grouped form draws the second text of the label under the first, in the secondary style.
-                Toggle(isOn: Binding(get: { state.showsMenuBarIcon }, set: { actions.setShowsMenuBarIcon($0) })) {
-                    Text("Show in Menu Bar")
-                    Text(
-                        state.canHideMenuBarIcon
-                            ? "When it is off, the menu opens from the wrench next to the search field of the history."
-                            : "⇧⌘V could not be set up, and nothing else would open the app: the icon stays."
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    Toggle(
+                        "Open at Login",
+                        // Called in a closure, not passed as a value: Swift 6.3 (the one that builds the releases)
+                        // crashes converting a @MainActor function to the plain one a Binding takes.
+                        isOn: Binding(get: { state.opensAtLogin }, set: { actions.setOpensAtLogin($0) })
                     )
-                }
-                .disabled(!state.canHideMenuBarIcon)
-            }
-            Section("Paste Items") {
-                VStack(alignment: .leading, spacing: Self.optionSpacing) {
-                    // The notice belongs to the first option: closer to it than the next option is.
-                    VStack(alignment: .leading, spacing: 10) {
-                        pickOption(
-                            .pasteDirectly,
-                            title: "Paste Directly",
-                            caption: "The item is pasted into the app you are using."
+                    // A grouped form draws the second text of the label under the first, in the secondary style.
+                    Toggle(isOn: Binding(get: { state.showsMenuBarIcon }, set: { actions.setShowsMenuBarIcon($0) })) {
+                        Text("Show in Menu Bar")
+                        Text(
+                            state.canHideMenuBarIcon
+                                ? """
+                                    When it is off, the menu opens from the wrench next to the search field of the \
+                                    history.
+                                    """
+                                : "⇧⌘V could not be set up, and nothing else would open the app: the icon stays."
                         )
-                        if showsAccessibilityNotice {
-                            HStack(spacing: PickOptionRow.spacing) {
-                                // As wide as the radio button, so the notice lines up with the option's text.
-                                Image(systemName: "circle")
-                                    .hidden()
-                                Text("Accessibility permission not granted")
-                                    .font(.callout)
-                                Button("Open System Settings…", action: actions.openAccessibilitySettings)
-                                    .controlSize(.small)
+                    }
+                    .disabled(!state.canHideMenuBarIcon)
+                }
+                Section("Paste Items") {
+                    VStack(alignment: .leading, spacing: Self.optionSpacing) {
+                        // The notice belongs to the first option: closer to it than the next option is.
+                        VStack(alignment: .leading, spacing: 10) {
+                            pickOption(
+                                .pasteDirectly,
+                                title: "Paste Directly",
+                                caption: "The item is pasted into the app you are using."
+                            )
+                            if showsAccessibilityNotice {
+                                HStack(spacing: PickOptionRow.spacing) {
+                                    // As wide as the radio button, so the notice lines up with the option's text.
+                                    Image(systemName: "circle")
+                                        .hidden()
+                                    Text("Accessibility permission not granted")
+                                        .font(.callout)
+                                    Button("Open System Settings…", action: actions.openAccessibilitySettings)
+                                        .controlSize(.small)
+                                }
                             }
                         }
+                        pickOption(
+                            .copyToClipboard,
+                            title: "Copy to Clipboard",
+                            caption: "The item goes to the clipboard and you paste it manually."
+                        )
                     }
-                    pickOption(
-                        .copyToClipboard,
-                        title: "Copy to Clipboard",
-                        caption: "The item goes to the clipboard and you paste it manually."
-                    )
                 }
             }
+            .formStyle(.grouped)
+            // Out of the form, which would box it: loose at the bottom right, as the reset of Privacy is.
+            Button("Reset All Settings…", action: actions.resetAllSettings)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding([.horizontal, .bottom], Self.headerInset)
         }
-        .formStyle(.grouped)
     }
 
     private func pickOption(_ option: PickAction, title: String, caption: String) -> some View {
