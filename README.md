@@ -22,10 +22,28 @@ the time chosen there.
    starts on) and whether to open at login. Both can be changed later in Settings.
 4. Grant the Accessibility permission when asked, if you chose to paste directly (see Permissions).
 
-The app checks GitHub for a new release shortly after launch and then once a day. When there is one, the menu-bar icon
-turns blue, with an arrow (when it is hidden, the wrench turns blue), and the menu shows "Update Available…", which
-opens the release page; nothing is downloaded or installed. This is the only network request the app makes, and
-nothing from the clipboard is sent.
+### From the terminal
+
+A browser marks what it downloads as quarantined, which is what makes macOS refuse the app; `curl` does not, so an
+app installed this way opens without "Open Anyway". The same command updates an installed copy:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/marcos-fernandez/simpleclipboard/main/scripts/install.sh | bash
+```
+
+[`scripts/install.sh`](scripts/install.sh) downloads the latest release's disk image, quits the running copy if there
+is one, replaces `/Applications/SimpleClipboard.app` and opens it. It stops at the first step that fails.
+
+### Updates
+
+The app checks GitHub for a new release shortly after launch and then once a day. When there is one, the menu-bar
+icon turns blue, with an arrow (when it is hidden, the wrench turns blue), and the menu shows "Update Available".
+Choosing it downloads the release's disk image, checks that the app in it is signed like the running one and is the
+version offered, puts it in place and asks whether to restart now. If any of that fails, it offers the release page
+instead. A copy built from the source code is not signed like the releases, so it always ends at the release page.
+
+The check, and the download once you choose the update, are the only network requests the app makes; nothing from
+the clipboard is sent.
 
 ## Build and install
 
