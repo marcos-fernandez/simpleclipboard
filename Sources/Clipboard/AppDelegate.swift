@@ -56,10 +56,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let showsMenuBarIconKey = "showsMenuBarIcon"
     /// Set once the question of the first launch has been answered.
     private static let welcomeShownKey = "welcomeShown"
-    /// What "Reset All Settings…" removes: what the settings window and the welcome save. Not the keys of the
-    /// backup, which say what it has done and are no choice of the user, nor a pause, which is not a setting.
+    /// What "Reset All Settings…" removes: what the settings window and the welcome save, and a pause, so the app
+    /// comes back recording. Not the keys of the backup, which say what it has done and are no choice of the user.
     private static let settingsKeys = [
-        ignoredAppsKey, loginItemRegisteredKey, pickActionKey, securedAppsKey, securedLifetimeKey,
+        ignoredAppsKey, loginItemRegisteredKey, pausedUntilKey, pickActionKey, securedAppsKey, securedLifetimeKey,
         showsMenuBarIconKey, welcomeShownKey,
     ]
 
@@ -1197,7 +1197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.messageText = "Reset all settings?"
         alert.informativeText = """
             The settings go back to their defaults and \(Config.appName) restarts, asking again how to paste and \
-            whether to open at login. The history, the tags and the backup are left as they are.
+            whether to open at login. A pause ends. The history, the tags and the backup are left as they are.
             """
         alert.addButton(withTitle: "Reset and Restart")
         alert.addButton(withTitle: "Cancel")
