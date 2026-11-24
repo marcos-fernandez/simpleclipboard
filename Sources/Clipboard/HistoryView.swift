@@ -37,7 +37,10 @@ private struct MenuAnchorView: NSViewRepresentable {
 struct HistoryView: View {
     let store: HistoryStore
     @Bindable var state: PanelState
+    let onDelete: (ClipItem) -> Void
     let onPick: (ClipItem) -> Void
+    /// Puts the keyboard back in the search field, after its text, once an overlay that took it closes.
+    let onRestoreSearchFocus: () -> Void
     /// Filled with the view behind the wrench, for `onShowMenu` to open the menu from.
     let menuAnchor: MenuAnchor
     /// Opens the menu of the menu-bar item from the wrench.
@@ -61,6 +64,12 @@ struct HistoryView: View {
                     TextField("Search", text: $state.query)
                         .textFieldStyle(.plain)
                         .focused($searchFocused)
+                    if state.query.isEmpty && !searchFocused {
+                        // The keyboard is on the cards: how to bring it here.
+                        Text("⌘F")
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
                     if !state.query.isEmpty {
                         Button {
                             state.query = ""
@@ -101,21 +110,29 @@ struct HistoryView: View {
                 PanelOverlayView(store: store, state: state, overlay: overlay)
             }
         }
-        .onChange(of: state.overlay) { _, newValue in
-            // AppKit draws the search field's focus ring above the overlay, so the field gives focus up meanwhile.
-            searchFocused = newValue == nil
+        .onChange(of: state.overlay) { oldValue, newValue in
+            // AppKit draws the search field's focus ring above the overlay, so the field gives the keyboard up
+            // meanwhile, and has it back afterwards if it had it. Through the panel and not by `searchFocused`,
+            // which selects the whole text: the next key would replace the search.
+            if oldValue == nil {
+                state.hadSearchFocusBeforeOverlay = searchFocused
+            }
+            if newValue != nil {
+                searchFocused = false
+            } else if state.hadSearchFocusBeforeOverlay {
+                onRestoreSearchFocus()
+            }
+        }
+        // Where the keyboard goes is the panel's to decide (`PanelController.show`, `focusSearchField`); this only
+        // tells it where it is.
+        .onChange(of: searchFocused) { _, isFocused in
+            state.isSearchFocused = isFocused
         }
         .onChange(of: state.query) {
             startFromTheFirstCard()
         }
         .onChange(of: state.scope) {
             startFromTheFirstCard()
-        }
-        .onAppear {
-            searchFocused = true
-        }
-        .onChange(of: state.focusRequest) {
-            searchFocused = true
         }
     }
 
@@ -148,13 +165,13 @@ struct HistoryView: View {
     }
 
     private var emptyMessage: String {
-        if !state.query.isEmpty {
+        if state.hasSearch {
             return "No results"
         }
         if case .tag = state.effectiveScope(in: store) {
-            return "This tag has no items"
+            return "This tag has no items."
         }
-        return "The history is empty"
+        return "The history is empty."
     }
 
     private func tagColor(for item: ClipItem) -> Color? {
@@ -189,25 +206,16 @@ struct HistoryView: View {
                     .onTapGesture {
                         state.selectedID = item.id
                     }
-                    .contextMenu {
-                        Menu("Tag") {
-                            ForEach(store.tags) { tag in
-                                Button(tag.name) {
-                                    store.setTag(itemID: item.id, tagID: tag.id)
-                                }
-                            }
-                            if !store.tags.isEmpty {
-                                Divider()
-                            }
-                            Button("New Tag…") {
-                                state.apply(.newTag, to: item.id, in: store)
-                            }
+                    .overlay {
+                        AppKitContextMenu {
+                            CardMenu.menu(
+                                item: item,
+                                tags: store.tags,
+                                onDelete: { onDelete(item) },
+                                onNewTag: { state.apply(.newTag, to: item.id, in: store) },
+                                onSetTag: { store.setTag(itemID: item.id, tagID: $0) }
+                            )
                         }
-                        .disabled(item.isConcealed)
-                        Button("Remove Tag") {
-                            store.setTag(itemID: item.id, tagID: nil)
-                        }
-                        .disabled(item.isConcealed || item.tagID == nil)
                     }
                 }
             }
@@ -238,7 +246,7 @@ struct HistoryView: View {
             }
         }
         // The panel keeps its scroll offset while hidden; every show starts from the first card, the selected one.
-        .onChange(of: state.focusRequest) {
+        .onChange(of: state.showRequest) {
             state.showFirst(0, of: results)
         }
     }

@@ -22,12 +22,22 @@ enum TagPickerOption: Hashable {
 @Observable
 final class PanelState {
     var query = ""
+    /// Whether there is a search: text of only blanks is none (see `SearchKeys.isSearch`).
+    var hasSearch: Bool {
+        SearchKeys.isSearch(query)
+    }
     /// Selection follows the item, not its position, so new copies or purges don't shift it.
     /// nil means "first result".
     var selectedID: UUID?
-    /// Incremented on every show so the view focuses the search field.
-    var focusRequest = 0
-    /// Active tab. Reset to .history every time the panel opens.
+    /// Whether the search field had the keyboard when an overlay took it, to give it back when the overlay closes.
+    var hadSearchFocusBeforeOverlay = false
+    /// Whether the search field has the keyboard. Written by the view; the panel reads it to tell a key that is
+    /// typed into the field from one that has to be taken there.
+    var isSearchFocused = false
+    /// Incremented on every show: the view takes the keyboard out of the search field and the strip goes back to its
+    /// first card.
+    var showRequest = 0
+    /// Active tab. Back to .history when the panel opens after a card was picked.
     var scope: HistoryStore.Scope = .history
     /// Whether the wrench next to the search field is shown: only while the menu-bar item, whose menu it opens, is
     /// hidden.
@@ -97,6 +107,8 @@ final class PanelState {
         results.firstIndex { $0.id == selectedID } ?? 0
     }
 
+    /// The colour chosen for the tag being created: the next of the row when its overlay opens.
+    var newTagColorIndex = 0
     var overlay: PanelOverlay?
     var pickerIndex = 0
     var promptText = ""
@@ -118,6 +130,7 @@ final class PanelState {
             store.setTag(itemID: itemID, tagID: nil)
             overlay = nil
         case .newTag:
+            newTagColorIndex = TagColors.indexForNewTag(tagCount: store.tags.count)
             promptText = ""
             overlay = .newTag(itemID: itemID)
         }
@@ -133,8 +146,7 @@ final class PanelState {
                 overlay = nil
                 return
             }
-            let colorIndex = store.tags.count % Config.tagColorCount
-            guard let tag = store.createTag(name: promptText, colorIndex: colorIndex) else {
+            guard let tag = store.createTag(name: promptText, colorIndex: newTagColorIndex) else {
                 return
             }
             store.setTag(itemID: itemID, tagID: tag.id)
@@ -180,8 +192,8 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// The digit of each key of the number row. By key and not by character, unlike ⌘T below: the digits keep
     /// their place on every layout, and on AZERTY those keys type "&", "é"… unless ⇧ is held.
     private static let digitsByKeyCode = [
-        kVK_ANSI_0: 0, kVK_ANSI_1: 1, kVK_ANSI_2: 2, kVK_ANSI_3: 3, kVK_ANSI_4: 4,
-        kVK_ANSI_5: 5, kVK_ANSI_6: 6, kVK_ANSI_7: 7, kVK_ANSI_8: 8, kVK_ANSI_9: 9,
+        kVK_ANSI_1: 1, kVK_ANSI_2: 2, kVK_ANSI_3: 3, kVK_ANSI_4: 4, kVK_ANSI_5: 5,
+        kVK_ANSI_6: 6, kVK_ANSI_7: 7, kVK_ANSI_8: 8, kVK_ANSI_9: 9,
     ]
     private static let margin: CGFloat = 8
     /// Between the wrench and the menu it opens.
@@ -193,6 +205,10 @@ final class PanelController: NSObject, NSWindowDelegate {
     private let onPick: (ClipItem, NSRunningApplication?) -> Void
     private var keyMonitor: Any?
     private var previousApp: NSRunningApplication?
+    /// Whether the next show starts with no search and on the History tab: the first one, and each one after a card
+    /// was picked. A panel that closed without a pick (a click outside, Esc, the hotkey again) opens as it was left,
+    /// so a search is not lost to it.
+    private var startsClean = true
     private let menuAnchor = MenuAnchor()
 
     /// The menu of the menu-bar item, opened from the wrench while that item is hidden.
@@ -231,8 +247,14 @@ final class PanelController: NSObject, NSWindowDelegate {
             rootView: HistoryView(
                 store: store,
                 state: state,
+                onDelete: { [weak self] item in
+                    self?.delete(item)
+                },
                 onPick: { [weak self] item in
                     self?.pick(item)
+                },
+                onRestoreSearchFocus: { [weak self] in
+                    self?.focusSearchField(selectingText: false)
                 },
                 menuAnchor: menuAnchor,
                 onShowMenu: { [weak self] in
@@ -262,9 +284,19 @@ final class PanelController: NSObject, NSWindowDelegate {
         // The strip opens with nothing expired in the store, so that `redrawIfAnyCardExpired` only finds what
         // expires while it is open.
         store.purgeExpired()
-        state.query = ""
+        if startsClean {
+            state.query = ""
+            state.scope = .history
+            startsClean = false
+        }
+        // Blanks left in the field are no search to go on with.
+        if !state.hasSearch {
+            state.query = ""
+        }
         state.selectedID = nil
-        state.scope = .history
+        // Before the overlay goes: the view gives the keyboard back to the field when one closes, and a panel that
+        // was hidden with one open would do it now.
+        state.hadSearchFocusBeforeOverlay = false
         state.overlay = nil
         ThumbnailCache.forgetMisses()
 
@@ -277,7 +309,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         let layout = StripLayout(
             width: PanelMetrics.cardRowWidth(stripWidth: stripWidth),
             minCardWidth: PanelMetrics.minCardWidth,
-            spacing: PanelMetrics.cardSpacing
+            spacing: PanelMetrics.cardSpacing,
+            maxCardCount: CardShortcuts.digits.count
         )
         state.cardCount = layout.cardCount
         state.cardWidth = layout.cardWidth
@@ -295,7 +328,15 @@ final class PanelController: NSObject, NSWindowDelegate {
             display: true
         )
         panel.makeKeyAndOrderFront(nil)
-        state.focusRequest += 1
+        // The keyboard starts on the cards: a window gives it to its first field when it becomes key. With a search
+        // kept from before it starts in the field, after its text, to go on with it. Decided here and nowhere
+        // else: the view follows what the window does.
+        panel.makeFirstResponder(nil)
+        state.isSearchFocused = false
+        state.showRequest += 1
+        if state.hasSearch {
+            focusSearchField(selectingText: false)
+        }
         installKeyMonitor()
     }
 
@@ -314,8 +355,64 @@ final class PanelController: NSObject, NSWindowDelegate {
             return
         }
         let target = previousApp
+        startsClean = true
         hide()
         onPick(item, target)
+    }
+
+    /// From the menu of a card, which may not be the selected one.
+    private func delete(_ item: ClipItem) {
+        let results = state.results(in: store)
+        guard let index = results.firstIndex(where: { $0.id == item.id }) else {
+            // The card has expired and is still drawn: purging takes it away, which is what was asked for.
+            store.purgeExpired()
+            return
+        }
+        remove(at: index, of: results)
+    }
+
+    private func remove(at index: Int, of results: [ClipItem]) {
+        let wasSelected = state.selectedIndex(in: results) == index
+        store.remove(id: results[index].id)
+        // The list already in hand minus the removed item, instead of searching again.
+        var remaining = results
+        remaining.remove(at: index)
+        // The card that takes its place becomes the first in view: the removed one would leave the cards without
+        // shortcuts until the strip is drawn again.
+        if state.leadingCardID == results[index].id {
+            state.showFirst(index, of: remaining)
+        }
+        // The selection moves to the card that took the place only when the removed one had it.
+        if wasSelected {
+            state.selectedID = remaining.isEmpty
+                ? nil
+                : remaining[min(index, remaining.count - 1)].id
+        }
+    }
+
+    /// Puts the keyboard in the search field. `selectingText`: with its text selected, as any field that is entered,
+    /// or with the cursor after it. Straight to the AppKit field under the SwiftUI one, and not through the view:
+    /// the key that brought the keyboard here is then typed into the field, through an input method too.
+    private func focusSearchField(selectingText: Bool = true) {
+        guard let field = panel.contentView.flatMap(Self.firstTextField(in:)), panel.makeFirstResponder(field) else {
+            return
+        }
+        if !selectingText {
+            field.currentEditor()?.selectedRange = NSRange(location: (field.stringValue as NSString).length, length: 0)
+        }
+        state.isSearchFocused = true
+    }
+
+    private static func firstTextField(in view: NSView) -> NSTextField? {
+        if let field = view as? NSTextField, field.isEditable {
+            return field
+        }
+        for subview in view.subviews {
+            if let field = firstTextField(in: subview) {
+                return field
+            }
+        }
+        return nil
     }
 
     /// Opens `menu` above the wrench: the strip sits at the bottom of the screen, with no room under it.
@@ -391,8 +488,8 @@ final class PanelController: NSObject, NSWindowDelegate {
                let position = CardShortcuts.position(digit: digit) {
                 let results = state.results(in: store)
                 // Counted from the first card in view, and only the cards that show the shortcut: the others are
-                // off the screen. The key is taken either way, so a digit with no card does not reach the search
-                // field.
+                // off the screen. The key of a digit that has a shortcut is taken either way, so one with no card
+                // does not reach the search field.
                 if !redrawIfAnyCardExpired(), position < state.cardShortcutCount,
                    let leading = state.leadingIndex(in: results), results.indices.contains(leading + position) {
                     pick(results[leading + position])
@@ -409,12 +506,29 @@ final class PanelController: NSObject, NSWindowDelegate {
                 }
                 return true
             }
+            if key == "f" || (!isLatin && Int(event.keyCode) == kVK_ANSI_F) {
+                focusSearchField()
+                return true
+            }
+        }
+        // The keyboard is on the cards until it is asked for, but typing is still searching: the key goes to the
+        // field. Not with ⌘ or ⌃, which are shortcuts, and never the keys handled below.
+        if !state.isSearchFocused, modifiers.isDisjoint(with: [.command, .control]),
+           SearchKeys.typesText(event.characters) {
+            focusSearchField()
+            return false
         }
         let results = state.results(in: store)
         let index = state.selectedIndex(in: results)
         switch Int(event.keyCode) {
         case kVK_Escape:
-            hide()
+            // With a search, the first Esc is for it: closing would keep the text for the next time the history
+            // opens, and the way out of a search would be to delete it by hand.
+            if state.hasSearch {
+                state.query = ""
+            } else {
+                hide()
+            }
         case kVK_LeftArrow:
             if index > 0 {
                 state.selectedID = results[index - 1].id
@@ -429,20 +543,15 @@ final class PanelController: NSObject, NSWindowDelegate {
             }
         case kVK_Delete where event.modifierFlags.contains(.command):
             if !redrawIfAnyCardExpired(), results.indices.contains(index) {
-                store.remove(id: results[index].id)
-                // The list already in hand minus the removed item, instead of searching again.
-                var remaining = results
-                remaining.remove(at: index)
-                // The card that takes its place becomes the first in view: the removed one would leave the cards
-                // without shortcuts until the strip is drawn again.
-                if state.leadingCardID == results[index].id {
-                    state.showFirst(index, of: remaining)
-                }
-                state.selectedID = remaining.isEmpty
-                    ? nil
-                    : remaining[min(index, remaining.count - 1)].id
+                remove(at: index, of: results)
             }
         default:
+            // Paste, select all and undo are for the search field, and with the keyboard on the cards they would
+            // go to nobody: the keyboard is taken there first, after its text.
+            if !state.isSearchFocused, modifiers.subtracting(.shift) == .command,
+               SearchKeys.isEditShortcutOfTheField(event.charactersIgnoringModifiers) {
+                focusSearchField(selectingText: false)
+            }
             return sendEditShortcut(event)
         }
         return true
