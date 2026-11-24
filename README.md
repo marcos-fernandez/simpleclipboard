@@ -91,7 +91,8 @@ Universal Clipboard hands it from this one, and with sync between Macs that come
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open) opens a window with a pane per row of its sidebar
 (`↑` `↓` change pane, unless a list has the focus):
 
-- **About**: the version, who makes the app, its contributors and a link to this repository.
+- **About**: the version, "Check for Updates…" to look for a release now and not at the daily check, who makes the
+  app, its contributors and a link to this repository.
 - **General**: open at login; "Show in Menu Bar", which hides the menu-bar icon when off: its menu then opens from a
   wrench to the left of the search field of the history (`⇧⌘V`). If `⇧⌘V` cannot be registered the icon stays, as
   nothing else would open the app. Opening the app again (from Finder or Spotlight) also shows the history, for when

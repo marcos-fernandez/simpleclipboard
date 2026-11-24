@@ -66,6 +66,30 @@ public enum UpdateCheckResult: Equatable, Sendable {
     }
 }
 
+/// The check the user asks for in the About pane of the settings, and what the pane says of it. The check of every
+/// day is silent; this one always ends in an answer on show, a failure included.
+public enum ManualUpdateCheck: Equatable, Sendable {
+    case notAsked
+    case checking
+    case answered(UpdateCheckResult)
+
+    public var text: String? {
+        switch self {
+        case .notAsked:
+            return nil
+        case .checking:
+            return "Checking…"
+        case .answered(.available(let version)):
+            return "Version \(version) is available: install it from the menu."
+        case .answered(.upToDate):
+            return "\(Config.appName) is up to date."
+        case .answered(.failed):
+            // Not "no connection": a build without a version, a rate limit and an odd answer end here too.
+            return "Could not check for updates."
+        }
+    }
+}
+
 /// Asks GitHub for the latest release and compares it with the running version: a plain GET, without cookies or
 /// cache, that sends nothing about the user. The only other request is the download of an update the user chose
 /// (see `UpdateInstaller`).

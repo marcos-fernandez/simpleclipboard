@@ -101,6 +101,10 @@ final class SettingsState {
     var showsMenuBarIcon = true
     /// False when ⇧⌘V could not be registered: the icon then stays whatever the setting.
     var canHideMenuBarIcon = true
+    /// The check asked for in the About pane.
+    var updateCheck = ManualUpdateCheck.notAsked
+    /// False while an update downloads or waits for a restart.
+    var canCheckForUpdates = true
 
     /// The pane `offset` rows away in the sidebar, stopping at its ends.
     func movePane(by offset: Int) {
@@ -113,6 +117,7 @@ final class SettingsState {
 @MainActor
 struct SettingsActions {
     let addApps: @MainActor (PrivacyList) -> Void
+    let checkForUpdates: @MainActor () -> Void
     let openAccessibilitySettings: @MainActor () -> Void
     let removeApp: @MainActor (String, PrivacyList) -> Void
     let resetPrivacy: @MainActor () -> Void
@@ -254,6 +259,15 @@ struct SettingsView: View {
             Text(Self.versionText)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+            Button("Check for Updates…", action: actions.checkForUpdates)
+                // Until the answer comes: a second check would be the same question.
+                .disabled(state.updateCheck == .checking || !state.canCheckForUpdates)
+                .padding(.top, Self.aboutSectionSpacing)
+            if let text = state.updateCheck.text {
+                Text(text)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
             HStack(spacing: Self.aboutWordSpacing) {
                 Text("Made by")
                     .foregroundStyle(.secondary)

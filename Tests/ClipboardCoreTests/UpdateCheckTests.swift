@@ -145,4 +145,26 @@ struct UpdateCheckTests {
         #expect(configuration.requestCachePolicy == .reloadIgnoringLocalCacheData)
         #expect(configuration.timeoutIntervalForResource == Config.updateCheckTimeout)
     }
+
+    @Test func nothingIsSaidOfACheckNobodyAskedFor() {
+        #expect(ManualUpdateCheck.notAsked.text == nil)
+    }
+
+    @Test(arguments: [UpdateCheckResult.upToDate, .failed])
+    func aCheckTheUserAskedForAlwaysEndsInAnAnswerOnShow(result: UpdateCheckResult) {
+        // The daily check is silent when there is nothing new or it fails; after a click, silence would read as
+        // the button doing nothing.
+        #expect(ManualUpdateCheck.checking.text != nil)
+        #expect(ManualUpdateCheck.answered(result).text != nil)
+    }
+
+    @Test func beingUpToDateAndAFailedCheckDoNotReadTheSame() {
+        // A check that failed says nothing about whether there is an update.
+        #expect(ManualUpdateCheck.answered(.upToDate).text != ManualUpdateCheck.answered(.failed).text)
+    }
+
+    @Test func theUpdateFoundIsNamedByItsVersion() throws {
+        let version = try #require(AppVersion("v1.17.0"))
+        #expect(ManualUpdateCheck.answered(.available(version)).text?.contains("1.17.0") == true)
+    }
 }
