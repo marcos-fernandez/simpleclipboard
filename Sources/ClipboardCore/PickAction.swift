@@ -10,4 +10,13 @@ public enum PickAction: String, Sendable {
     public init(stored: String?) {
         self = stored.flatMap(PickAction.init(rawValue:)) ?? .pasteDirectly
     }
+
+    /// What the welcome of the first launch starts on. A new install starts on copying, which needs no permission.
+    /// One that ran before and is asked all the same (it came from the old app name, its login item was never
+    /// registered) starts on what it was doing, chosen or not: the welcome must not change it unnoticed.
+    public static func atWelcome(isNewInstall: Bool, stored: String?) -> PickAction {
+        isNewInstall
+            ? .copyToClipboard
+            : PickAction(stored: stored)
+    }
 }

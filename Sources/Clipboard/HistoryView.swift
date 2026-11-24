@@ -146,7 +146,7 @@ struct HistoryView: View {
     /// same background, so the two read as one row of controls.
     private var menuButton: some View {
         let symbolColor = state.isUpdateAvailable
-            ? Color(nsColor: .systemOrange)
+            ? Color(nsColor: .systemBlue)
             : Color.secondary
         let label = state.isUpdateAvailable
             ? "\(Config.appName) Menu, update available"

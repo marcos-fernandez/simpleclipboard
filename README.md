@@ -18,7 +18,9 @@ the time chosen there.
    permission and "Open at Login" would point to a volume that is gone once ejected.
 2. Open it. The app is not notarized by Apple, so macOS refuses the first time: go to System Settings > Privacy &
    Security and click "Open Anyway" (or run `xattr -dr com.apple.quarantine /Applications/SimpleClipboard.app`).
-3. Grant the Accessibility permission when asked (see Permissions).
+3. The first time, the app asks how to paste what you pick ("Paste Directly" or "Copy to Clipboard", which it
+   starts on) and whether to open at login. Both can be changed later in Settings.
+4. Grant the Accessibility permission when asked, if you chose to paste directly (see Permissions).
 
 ### From the terminal
 
@@ -35,11 +37,10 @@ is one, replaces `/Applications/SimpleClipboard.app` and opens it. It stops at t
 ### Updates
 
 The app checks GitHub for a new release shortly after launch and then once a day. When there is one, the menu-bar
-icon (or the wrench, when it is hidden) changes and the menu shows "Update Available". Choosing it downloads the
-release's disk image, checks that the
-app in it is signed like the running one and is the version offered, puts it in place and asks whether to restart
-now. If any of that fails, it offers the release page instead. A copy built from the source code is not signed like
-the releases, so it always ends at the release page.
+icon turns blue, with an arrow (when it is hidden, the wrench turns blue), and the menu shows "Update Available".
+Choosing it downloads the release's disk image, checks that the app in it is signed like the running one and is the
+version offered, puts it in place and asks whether to restart now. If any of that fails, it offers the release page
+instead. A copy built from the source code is not signed like the releases, so it always ends at the release page.
 
 The check, and the download once you choose the update, are the only network requests the app makes; nothing from
 the clipboard is sent.
@@ -81,6 +82,12 @@ from the "Secured Apps".
 The history opens with the keyboard on its cards, at most nine in view. A search, and the tab it was made in, are
 still there when the history is opened again, until a card is picked: closing it by mistake does not lose them.
 
+"Pause" in the menu-bar menu stops recording for 5, 15 or 30 minutes, or 1, 4 or 8 hours: what you copy meanwhile is
+not kept, then or later. The menu-bar icon is dimmed meanwhile and the menu says until when; "Resume", in that same
+submenu, ends it before its time. The history still opens and pastes while paused, and quitting the app does not end
+the pause. A pause is of this Mac only: another Mac of yours that is not paused still records what it copies, and what
+Universal Clipboard hands it from this one, and with sync between Macs that comes back here.
+
 "Settings…" in the menu-bar menu (`⌘,` while the menu is open) opens a window with a pane per row of its sidebar
 (`↑` `↓` change pane, unless a list has the focus):
 
@@ -89,8 +96,8 @@ still there when the history is opened again, until a card is picked: closing it
   wrench to the left of the search field of the history (`⇧⌘V`). If `⇧⌘V` cannot be registered the icon stays, as
   nothing else would open the app. Opening the app again (from Finder or Spotlight) also shows the history, for when
   another app has taken `⇧⌘V`; an item picked there is only copied, as SimpleClipboard is then the app in front.
-  And what happens when an item is picked: "Paste Directly" (the default) or "Copy to Clipboard", which leaves the
-  pasting to you.
+  And what happens when an item is picked: "Paste Directly" or "Copy to Clipboard", which leaves the pasting to
+  you.
 - **Privacy**: two lists of apps. "Ignored Apps": what you copy from them is not kept in the history; Keychain
   Access is there from the start. "Secured Apps": what you copy from them is kept hidden, in memory only, and never
   reaches the backup or the other Macs; 1Password and Passwords are there from the start. "Keep For" sets how long

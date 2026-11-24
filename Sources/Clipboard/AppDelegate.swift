@@ -40,12 +40,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var backupNowItem: NSMenuItem!
     private var restoreItem: NSMenuItem!
 
+    /// "Pause", or "Paused until 10:30" while paused, with its submenu: "Resume" while paused, and the durations.
+    private var pauseItem: NSMenuItem!
+    /// One-shot, at the end of the pause, to put the icon back.
+    private var pauseTimer: Timer?
+    private var resumeItem: NSMenuItem!
+    private var resumeSeparator: NSMenuItem!
+
     private static let ignoredAppsKey = "ignoredSourceBundleIDs"
     private static let loginItemRegisteredKey = "loginItemRegistered"
+    private static let pausedUntilKey = "pausedUntil"
     private static let pickActionKey = "pickAction"
     private static let securedAppsKey = "concealedSourceBundleIDs"
     private static let securedLifetimeKey = "concealedLifetime"
     private static let showsMenuBarIconKey = "showsMenuBarIcon"
+    /// Set once the question of the first launch has been answered.
+    private static let welcomeShownKey = "welcomeShown"
 
     private let settingsState = SettingsState()
     private var settings: SettingsWindowController!
@@ -83,6 +93,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         formatter.locale = Locale(identifier: "en_US")
         return formatter
     }()
+
+    /// Whether this launch is the first of the app on this Mac: its data folder was not there. Set at launch.
+    private var isNewInstall = false
+
+    private var isPaused: Bool {
+        Pause.isActive(until: pausedUntil, now: Date())
+    }
+
+    /// Saved, so quitting or restarting does not end a pause.
+    private var pausedUntil: Date? {
+        UserDefaults.standard.object(forKey: Self.pausedUntilKey) as? Date
+    }
 
     private var pickAction: PickAction {
         PickAction(stored: UserDefaults.standard.string(forKey: Self.pickActionKey))
@@ -141,6 +163,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             directory: directory,
             iCloudDriveRoot: iCloudDriveRoot
         )
+        // After the migration, which brings the folder of the old app name, and before anything creates it.
+        isNewInstall = !FileManager.default.fileExists(atPath: directory.path)
 
         backup = BackupService(localDirectory: directory, iCloudDriveRoot: iCloudDriveRoot)
         // Before FilePersistence, which creates an empty images/ that would keep the leftover images out.
@@ -188,6 +212,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 Set(self?.apps(of: .ignored) ?? [])
             }
         )
+        monitor.isPaused = { [weak self] in
+            self?.isPaused ?? false
+        }
         monitor.start()
 
         let purgeTimer = Timer(timeInterval: Config.purgeInterval, repeats: true) { [weak self] _ in
@@ -251,11 +278,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         setUpStatusItem()
         startUpdateChecks()
-        registerLoginItem()
-        // Only pasting needs the permission: set to copy, the app does not ask for it at launch.
-        if pickAction == .pasteDirectly {
-            requestAccessibilityIfNeeded()
+        // A new install is asked first how to paste and whether to open at login; the permission and the login item
+        // wait for its answer. One that already ran (its login item was registered) is never asked.
+        if UserDefaults.standard.bool(forKey: Self.welcomeShownKey)
+            || UserDefaults.standard.bool(forKey: Self.loginItemRegisteredKey) {
+            registerLoginItem()
+            // Only pasting needs the permission: set to copy, the app does not ask for it at launch.
+            if pickAction == .pasteDirectly {
+                requestAccessibilityIfNeeded()
+            }
+        } else {
+            // At the next turn: the alert is modal, and the launch has to end first. From the run loop and not as a
+            // task: a modal alert opened from a job of the main queue holds every other one back until it closes,
+            // and what is copied meanwhile would not reach the history.
+            RunLoop.main.perform { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.showWelcome()
+                }
+            }
         }
+    }
+
+    /// An alert, as the app's other questions are, with the choices under its text.
+    private func showWelcome() {
+        let alert = NSAlert()
+        let state = WelcomeState()
+        defer {
+            handFocusBack()
+            // Nothing of ours is left on show. `handFocusBack` has nothing to go by when the login item failed: its
+            // alert took the record of the app in front.
+            NSApp.hide(nil)
+        }
+        // An install that ran before but never got its login item registered, or that came from the old app name,
+        // is asked too: it starts on the way of pasting it had, chosen or not. Only a new one starts on copying.
+        state.pickAction = PickAction.atWelcome(
+            isNewInstall: isNewInstall, stored: UserDefaults.standard.string(forKey: Self.pickActionKey)
+        )
+        // The alert has no text of its own: its title cannot be made larger, so the welcome is drawn in the view.
+        alert.messageText = ""
+        alert.accessoryView = WelcomeView.accessoryView(state: state)
+        alert.addButton(withTitle: "Done")
+        runAlert(alert)
+
+        UserDefaults.standard.set(true, forKey: Self.welcomeShownKey)
+        // Against what the system has, which outlives the preferences of a reinstalled app: only a difference is
+        // a change to make, and asking to remove a login item that is not there fails.
+        if state.opensAtLogin != (SMAppService.mainApp.status == .enabled) {
+            setOpensAtLogin(state.opensAtLogin)
+        } else {
+            // The user has chosen: the first-launch registration must not run at the next launch.
+            UserDefaults.standard.set(true, forKey: Self.loginItemRegisteredKey)
+        }
+        // Asks for the Accessibility permission when the choice is to paste.
+        setPickAction(state.pickAction)
     }
 
     /// Opening the app again (Finder, Spotlight, `open`) shows the history, whose wrench opens the menu. It is the way
@@ -275,7 +350,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: Config.appName)
 
         let menu = NSMenu()
         // Hidden until a check finds a newer release, so without one the menu is unchanged.
@@ -321,15 +395,135 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsItem.target = self
         menu.addItem(settingsItem)
         menu.addItem(.separator())
+        // With "Quit": the two ways of stopping the app, for a while or for good.
+        pauseItem = NSMenuItem(title: "Pause", action: nil, keyEquivalent: "")
+        let pauseMenu = NSMenu()
+        // Only while paused; the durations stay, to pause for another while counted from then.
+        resumeItem = NSMenuItem(title: "Resume", action: #selector(resume), keyEquivalent: "")
+        resumeItem.target = self
+        pauseMenu.addItem(resumeItem)
+        resumeSeparator = .separator()
+        pauseMenu.addItem(resumeSeparator)
+        for duration in Pause.durations {
+            let item = NSMenuItem(title: Pause.title(of: duration), action: #selector(pause(_:)), keyEquivalent: "")
+            item.representedObject = duration
+            item.target = self
+            pauseMenu.addItem(item)
+        }
+        pauseItem.submenu = pauseMenu
+        menu.addItem(pauseItem)
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         // Manual enabling: with auto-enabling, AppKit would re-enable items that have a target.
         menu.autoenablesItems = false
         menu.delegate = self
         refreshBackupItems()
+        refreshPauseItems()
         refreshSyncItems()
         statusItem.menu = menu
         panel.menu = menu
         applyMenuBarIconSetting()
+        // A pause may come from before the app was quit.
+        refreshPause()
+        // The timer of its end stands still while the Mac sleeps, and goes by the clock it was set with: after a
+        // sleep or a change of the clock the pause is looked at again against its saved end, and the timer set for
+        // what is left of it. Otherwise the icon would say "paused" after recording has started again.
+        _ = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refreshPause()
+            }
+        }
+        _ = NotificationCenter.default.addObserver(
+            forName: .NSSystemClockDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refreshPause()
+            }
+        }
+    }
+
+    /// The one place that draws the menu-bar icon: with an arrow when a release is out, dimmed while paused.
+    private func refreshStatusIcon() {
+        let hasUpdate = availableUpdate != nil
+        let isOnPause = isPaused
+        let plain = "doc.on.clipboard"
+        let description = [
+            Config.appName,
+            hasUpdate
+                ? "update available"
+                : nil,
+            isOnPause
+                ? "paused"
+                : nil,
+        ].compactMap { $0 }.joined(separator: ", ")
+        var icon = NSImage(
+            systemSymbolName: hasUpdate
+                ? "arrow.up.doc.on.clipboard"
+                : plain,
+            accessibilityDescription: description
+        )
+        if hasUpdate {
+            // Coloured, so no longer a template image: the arrow alone is too small to notice in the menu bar. Blue
+            // is what the system uses for what is new.
+            icon = icon?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.systemBlue]))
+        }
+        // Falls back to the plain icon: a symbol missing on this macOS would leave the menu-bar item invisible.
+        statusItem.button?.image = icon ?? NSImage(systemSymbolName: plain, accessibilityDescription: description)
+        // Paused is the same icon dimmed, as the system dims what is off, and not another symbol: in the menu bar
+        // the icon is all that says whose item it is. It still opens the menu.
+        statusItem.button?.appearsDisabled = isOnPause
+    }
+
+    // MARK: pause
+
+    @objc private func pause(_ sender: NSMenuItem) {
+        guard let duration = sender.representedObject as? TimeInterval else {
+            return
+        }
+        UserDefaults.standard.set(Date().addingTimeInterval(duration), forKey: Self.pausedUntilKey)
+        refreshPause()
+    }
+
+    @objc private func resume() {
+        UserDefaults.standard.removeObject(forKey: Self.pausedUntilKey)
+        refreshPause()
+    }
+
+    /// The icon as the saved end of the pause says now, and the timer for that end.
+    private func refreshPause() {
+        refreshStatusIcon()
+        schedulePauseEnd()
+    }
+
+    /// The icon goes back when the pause ends, not at the next look of the purge timer.
+    private func schedulePauseEnd() {
+        pauseTimer?.invalidate()
+        pauseTimer = nil
+        guard let end = pausedUntil, Pause.isActive(until: end, now: Date()) else {
+            return
+        }
+        let timer = Timer(fire: end, interval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refreshStatusIcon()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pauseTimer = timer
+    }
+
+    private func refreshPauseItems() {
+        // Read once: the end and whether it has come must be of the same moment.
+        guard let end = pausedUntil, Pause.isActive(until: end, now: Date()) else {
+            resumeItem.isHidden = true
+            resumeSeparator.isHidden = true
+            pauseItem.title = "Pause"
+            return
+        }
+        resumeItem.isHidden = false
+        resumeSeparator.isHidden = false
+        // The time as the user has it set (12 or 24 hours): it is numbers, whatever the language of the rest.
+        pauseItem.title = "Paused until \(end.formatted(date: .omitted, time: .shortened))"
     }
 
     /// Shows or hides the menu-bar item, and the wrench of the history that stands in for it.
@@ -448,14 +642,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshUpdateItem()
         panel.isUpdateAvailable = availableUpdate != nil
         // Set here and not in menuNeedsUpdate: the icon has to change without the menu being opened.
-        let plainIcon = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: Config.appName)
-        // Falls back to the plain icon: a symbol missing on this macOS would leave the menu-bar item invisible.
-        statusItem.button?.image = availableUpdate == nil
-            ? plainIcon
-            // Coloured, so no longer a template image: the arrow alone is too small to notice in the menu bar.
-            : NSImage(systemSymbolName: "arrow.up.doc.on.clipboard", accessibilityDescription: "\(Config.appName), update available")?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.systemOrange]))
-                ?? plainIcon
+        refreshStatusIcon()
     }
 
     private func refreshUpdateItem() {
@@ -739,7 +926,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             Self.logger.error("Backup failed: \(error.localizedDescription, privacy: .public)")
             if manual {
-                showError("Could not back up to iCloud Drive", error: error)
+                showError("Could not back up", error: error)
             }
             return false
         }
@@ -754,10 +941,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let block = automaticBackupBlock
         if backup.hasBackup, block != nil || !isBackupBootstrapDone {
             let alert = NSAlert()
-            alert.messageText = "Replace the iCloud backup?"
+            alert.messageText = "Replace the backup?"
             alert.informativeText = block == .localDataLost
                 ? "This Mac's history or tags were found damaged and may be missing items the backup still has. It will be replaced with this Mac's data."
-                : "iCloud Drive already holds a backup that was not made from this Mac. It will be replaced with this Mac's data."
+                : "There is already a backup that was not made from this Mac. It will be replaced with this Mac's data."
             alert.addButton(withTitle: "Replace")
             alert.addButton(withTitle: "Cancel")
             guard runAlert(alert) == .alertFirstButtonReturn else {
@@ -775,7 +962,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             handFocusBack()
         }
         let alert = NSAlert()
-        alert.messageText = "Restore from iCloud Drive?"
+        alert.messageText = "Restore the backup?"
         alert.informativeText = "The local history and tags will be replaced."
         alert.addButton(withTitle: "Restore")
         alert.addButton(withTitle: "Cancel")
@@ -810,13 +997,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .iCloudUnavailable:
             return "iCloud Drive is not available."
         case .noBackup:
-            return "There is no backup in iCloud."
+            return "There is no backup."
         case .incompleteBackup:
-            return "The iCloud backup is incomplete: some files have not been downloaded yet, or were already missing when it was made. Open it in Finder and try again; if it still fails, make a new backup."
+            return "The backup is incomplete: some files have not been downloaded yet, or were already missing when it was made. Open it in Finder and try again; if it still fails, make a new backup."
         case .nothingToBackUp:
             return "There is nothing to back up yet."
         case .corruptBackup:
-            return "The iCloud backup is damaged and cannot be restored."
+            return "The backup is damaged and cannot be restored."
         case .unreadableLocalData:
             return "This Mac's history, tags or images folder cannot be read, so they were not backed up."
         case nil:
@@ -847,6 +1034,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         refreshBackupItems()
+        refreshPauseItems()
+        // With the title of the pause: whatever the timers missed, the icon is right once the menu is looked at.
+        refreshStatusIcon()
         refreshSyncItems()
     }
 
@@ -1039,8 +1229,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Self.logger.info("Open at login set to \(isOn, privacy: .public)")
         } catch {
             Self.logger.error("Cannot change login item: \(error.localizedDescription, privacy: .public)")
-            // Only the settings window calls this: the user stays in it, even when the click that flipped the switch
-            // is the one that brought it forward and another app is still in front.
+            // From the settings window, the user stays in it, even when the click that flipped the switch is the
+            // one that brought it forward and another app is still in front. The welcome hides the app itself.
             appInFrontBeforeAlert = .current
             showError("Could not change the login item", error: error)
         }

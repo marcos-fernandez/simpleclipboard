@@ -10,12 +10,14 @@ final class ClipboardMonitor {
     private let pasteboard = NSPasteboard.general
     /// Converts and hashes off the main thread, and adds to the store in the order copied.
     private let captures: CaptureQueue
-    private var lastChangeCount: Int
+    private var changes: PasteboardChanges
     private var timer: Timer?
     /// Apps that lost focus since the previous poll (e.g. 1Password handing focus back to the browser).
     private var recentlyDeactivated: Set<String> = []
     private let concealedSourceBundleIDs: @MainActor () -> Set<String>
     private let ignoredSourceBundleIDs: @MainActor () -> Set<String>
+    /// Whether recording is stopped ("Pause" in the menu). Asked at every copy; nil is never.
+    var isPaused: (@MainActor () -> Bool)?
 
     /// `concealedSourceBundleIDs`: the apps whose copies are kept hidden; `ignoredSourceBundleIDs`: the apps nothing
     /// is copied from. Both asked at every copy, so a change in the settings counts from the next one.
@@ -29,7 +31,7 @@ final class ClipboardMonitor {
         captures = CaptureQueue(store: store) { tiff in
             NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
         }
-        lastChangeCount = pasteboard.changeCount
+        changes = PasteboardChanges(changeCount: pasteboard.changeCount)
         _ = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didDeactivateApplicationNotification,
             object: nil,
@@ -59,11 +61,9 @@ final class ClipboardMonitor {
     private func poll() {
         let recentSourceBundleIDs = recentlyDeactivated
         recentlyDeactivated.removeAll()
-        let changeCount = pasteboard.changeCount
-        guard changeCount != lastChangeCount else {
+        guard changes.hasCopyToRead(changeCount: pasteboard.changeCount, isPaused: { isPaused?() == true }) else {
             return
         }
-        lastChangeCount = changeCount
 
         let types = Set((pasteboard.types ?? []).map(\.rawValue))
         let frontApp = NSWorkspace.shared.frontmostApplication
