@@ -6,8 +6,8 @@ name: Release
 on:
   push:
     branches: [main]
-    # A change of the documentation alone is not a new version. Not applied to tags.
-    paths-ignore: ["**.md"]
+    # A change of the documentation alone, its pictures included, is not a new version. Not applied to tags.
+    paths-ignore: ["**.md", "docs/**"]
     tags: ["v*"]
 
 # One at a time: two merges in a row must not work out the same version.
