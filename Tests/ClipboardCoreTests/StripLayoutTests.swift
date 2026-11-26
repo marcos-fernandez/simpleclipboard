@@ -104,4 +104,27 @@ struct StripLayoutTests {
         #expect(StripLayout.reachableLeadingCard(0, itemCount: 0, cardCount: 6) == 0)
         #expect(StripLayout.reachableLeadingCard(-1, itemCount: 8, cardCount: 6) == 0)
     }
+
+    // A card of 220 with 12 after it: dragged over more than half of the next one, it takes its place.
+    @Test(arguments: [
+        (2, 0.0, 2),
+        (2, 115.0, 2),
+        (2, 117.0, 3),
+        (2, 232.0, 3),
+        (2, 500.0, 4),
+        (2, -117.0, 1),
+        (2, -464.0, 0),
+        // Never past the ends of the five cards.
+        (2, 5000.0, 4),
+        (2, -5000.0, 0),
+        (2, .infinity, 4),
+    ])
+    func aDraggedCardIsDroppedAtThePlaceOfTheCardItIsOver(index: Int, distance: Double, position: Int) {
+        #expect(StripLayout.dropPosition(from: index, movedBy: distance, slotWidth: 232, itemCount: 5) == position)
+    }
+
+    @Test func aDraggedCardStaysWhereItIsWithoutCardsOrWithoutWidth() {
+        #expect(StripLayout.dropPosition(from: 2, movedBy: 500, slotWidth: 0, itemCount: 5) == 2)
+        #expect(StripLayout.dropPosition(from: 0, movedBy: 500, slotWidth: 232, itemCount: 0) == 0)
+    }
 }

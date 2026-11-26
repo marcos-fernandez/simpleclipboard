@@ -121,7 +121,8 @@ public enum SyncMerge {
         }
     }
 
-    /// Per tag the newest change wins (ties: the higher device ID); a later deletion removes it. A tag fused into a
+    /// Per tag the newest change wins (ties: the higher device ID), and it takes the order of its items from the
+    /// newest change of that order, which may be another Mac's; a later deletion removes it. A tag fused into a
     /// namesake (`SyncDeletion.fusedInto`) is removed the same way, but also when the fusion has the same date as its
     /// last change (the fusion is recorded at that date at the earliest), and goes into `fusedRemap` so its items follow
     /// the tag it went into on every Mac. Without that record, a file still listing the fused tag (a Mac that has not
@@ -131,9 +132,17 @@ public enum SyncMerge {
         local: SyncState, states: [SyncState], deletions: [DeletionKey: SyncDeletion]
     ) -> (tags: [SyncTag], fusedRemap: [UUID: UUID]) {
         var winners: [UUID: (tag: SyncTag, deviceID: String)] = [:]
+        var itemOrders: [UUID: (tag: SyncTag, deviceID: String)] = [:]
         var order = local.tags.map(\.id)
         for state in states {
             for tag in state.tags {
+                if let current = itemOrders[tag.id] {
+                    if (itemOrderStamp(tag), state.deviceID) > (itemOrderStamp(current.tag), current.deviceID) {
+                        itemOrders[tag.id] = (tag, state.deviceID)
+                    }
+                } else {
+                    itemOrders[tag.id] = (tag, state.deviceID)
+                }
                 guard let current = winners[tag.id] else {
                     winners[tag.id] = (tag, state.deviceID)
                     if !order.contains(tag.id) {
@@ -157,19 +166,26 @@ public enum SyncMerge {
             fusedRemap[id] = target
         }
         let tags: [SyncTag] = order.compactMap { id in
-            guard let winner = winners[id]?.tag, fusedRemap[id] == nil else {
+            guard var winner = winners[id]?.tag, fusedRemap[id] == nil else {
                 return nil
             }
             if let deletion = deletions[DeletionKey(kind: .tag, key: id.uuidString)], deletion.deletedAt > winner.changedAt {
                 return nil
             }
+            winner.itemOrder = itemOrders[id]?.tag.itemOrder
+            winner.itemOrderChangedAt = itemOrders[id]?.tag.itemOrderChangedAt
             return winner
         }
         return (tags, fusedRemap)
     }
 
+    private static func itemOrderStamp(_ tag: SyncTag) -> Date {
+        tag.itemOrderChangedAt ?? SyncState.unstamped
+    }
+
     /// Tags with the same name (`nameKey`: trimmed, case-insensitive) become one, in every merge: the smallest id wins,
-    /// keeping its own name, color and position, and the others go into `remap` so their items follow it. Two Macs
+    /// keeping its own name, color, position and order of its items (the items of the others go before them, as
+    /// any item the order does not list), and the others go into `remap` so their items follow it. Two Macs
     /// that join before seeing each other's file each publish their own "Work", and absence is not a deletion, so
     /// without this both would keep both tags for ever, with the items split between them. The user chose this
     /// knowing it also fuses two tags created on purpose with the same name, and that it cannot be undone. It runs on
@@ -193,10 +209,10 @@ public enum SyncMerge {
         return (tags.filter { remap[$0.id] == nil }, remap)
     }
 
-    /// Per content: the newest `createdAt` (it only grows) with the source app of that copy, and the tag of the
-    /// newest tag change, so a re-copy on one Mac and a tag set on another both survive. A later deletion removes
-    /// the item. An item whose tag is gone goes back to the history, dated no earlier than the tag's deletion so it
-    /// does not expire at once.
+    /// Per content: the newest `createdAt` (it only grows) with the source app of that copy, the tag of the newest tag
+    /// change and the name of the newest change of name, so a re-copy on one Mac, a tag set on another and a name
+    /// given on a third all survive. A later deletion removes the item. An item whose tag is gone goes back to the
+    /// history, dated no earlier than the tag's deletion so it does not expire at once.
     private static func mergedItems(
         states: [SyncState], tagIDs: Set<UUID>, tagRemap: [UUID: UUID], deletions: [DeletionKey: SyncDeletion],
         concealedHashes: Set<String>
@@ -210,10 +226,13 @@ public enum SyncMerge {
         var merged: [SyncItem] = []
         for (hash, versions) in candidates where !concealedHashes.contains(hash) {
             guard let newestCopy = versions.max(by: { ($0.item.createdAt, $0.deviceID) < ($1.item.createdAt, $1.deviceID) }),
+                  let newestName = versions.max(by: { nameRank($0) < nameRank($1) }),
                   let newestTag = versions.max(by: { tagRank($0) < tagRank($1) }) else {
                 continue
             }
             var item = newestCopy.item
+            item.customName = newestName.item.customName
+            item.customNameChangedAt = newestName.item.customNameChangedAt
             // A tag fused into a namesake (`fusingSameNames`, or a recorded fusion) is re-pointed here, before the
             // orphan check below, so its items follow the surviving tag instead of falling back to the history; if
             // that tag was itself fused or deleted, they follow it there too. `tagChangedAt` is kept.
@@ -246,6 +265,14 @@ public enum SyncMerge {
             current = next
         }
         return current
+    }
+
+    /// Newest change of name first; on equal times having a name wins, then the higher device ID.
+    private static func nameRank(_ candidate: Candidate) -> (Date, Int, String) {
+        let hasName = candidate.item.customName == nil
+            ? 0
+            : 1
+        return (candidate.item.customNameChangedAt ?? SyncState.unstamped, hasName, candidate.deviceID)
     }
 
     /// Newest tag change first; on equal times having a tag wins (two histories saved before sync must not lose a

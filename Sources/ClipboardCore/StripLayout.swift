@@ -29,6 +29,21 @@ public struct StripLayout: Equatable, Sendable {
         return current
     }
 
+    /// The position (from 0) a card dragged from `index` is dropped at, `distance` points away along the strip, where
+    /// each card with the space after it takes `slotWidth`: the place of the card it is over by more than half,
+    /// never past either end of the `itemCount` cards.
+    public static func dropPosition(
+        from index: Int, movedBy distance: Double, slotWidth: Double, itemCount: Int
+    ) -> Int {
+        guard slotWidth > 0, itemCount > 0 else {
+            return index
+        }
+        let slots = (distance / slotWidth).rounded()
+        // Compared as numbers before turning it into one: a distance beyond what an Int holds must not trap.
+        let position = min(max(0, Double(index) + slots), Double(itemCount - 1))
+        return Int(position)
+    }
+
     /// The position nearest to `index` that the strip can put first in view: with `itemCount` cards, the last
     /// `cardCount` fill the view, and none of them but the first can reach its leading edge.
     public static func reachableLeadingCard(_ index: Int, itemCount: Int, cardCount: Int) -> Int {

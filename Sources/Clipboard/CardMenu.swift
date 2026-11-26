@@ -17,6 +17,7 @@ enum CardMenu {
         tags: [Tag],
         onDelete: @escaping () -> Void,
         onNewTag: @escaping () -> Void,
+        onRename: @escaping () -> Void,
         onSetTag: @escaping (UUID?) -> Void,
         shareItems: (() -> [Any])?
     ) -> NSMenu {
@@ -25,6 +26,7 @@ enum CardMenu {
         let removeTag = ActionMenuItem(title: "Remove Tag") {
             onSetTag(nil)
         }
+        let rename = ActionMenuItem(title: "Rename…", handler: onRename)
         let tag = NSMenuItem(title: "Tag", action: nil, keyEquivalent: "")
         let tagMenu = NSMenu()
 
@@ -49,11 +51,15 @@ enum CardMenu {
         // What is copied from a secured app is never tagged.
         tag.isEnabled = !item.isConcealed
         removeTag.isEnabled = !item.isConcealed && item.tagID != nil
+        // What is copied from a secured app is never named either.
+        rename.isEnabled = !item.isConcealed
 
         // Manual enabling: with auto-enabling, AppKit would re-enable the items, which all have a target.
         menu.autoenablesItems = false
         menu.addItem(tag)
         menu.addItem(removeTag)
+        menu.addItem(.separator())
+        menu.addItem(rename)
         menu.addItem(.separator())
         // The system's share menu comes out of the card once this menu has closed, as it comes out of the share
         // button: the system's ready-made share item does nothing in a menu of this panel.
