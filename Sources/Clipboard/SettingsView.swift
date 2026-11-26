@@ -91,7 +91,7 @@ struct AppRow: Identifiable {
 @Observable
 final class SettingsState {
     var apps: [PrivacyList: [AppRow]] = [:]
-    /// General and not the first row of the sidebar: About is first only by its name.
+    /// General, the first row of the sidebar, as the settings window of any app opens.
     var pane = SettingsPane.general
     /// The app selected in each list of the Privacy pane, by bundle identifier.
     var selectedAppID: [PrivacyList: String] = [:]
