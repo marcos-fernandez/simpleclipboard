@@ -6,6 +6,9 @@ struct ClipCardView: View {
     /// The colour of the icon of the app the card was copied from, when it has one: for the header of a card
     /// without a tag.
     let appColor: Color?
+    let density: PanelDensity
+    /// Of the text of the card.
+    let font: CardFont
     let item: ClipItem
     let image: NSImage?
     let isSelected: Bool
@@ -29,7 +32,7 @@ struct ClipCardView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
                 .padding(.horizontal, PanelMetrics.cardPadding)
-                .frame(height: PanelMetrics.cardHeaderHeight)
+                .frame(height: density.cardHeaderHeight)
                 // The colour of its tag says more about a card than the one of its app, which is there for the
                 // cards without a tag; the grey is for an app whose icon has no colour.
                 .background(
@@ -41,7 +44,7 @@ struct ClipCardView: View {
                 .padding(PanelMetrics.cardPadding)
             footer
         }
-        .frame(width: width, height: PanelMetrics.cardHeight)
+        .frame(width: width, height: density.cardHeight)
         // Black or white with the appearance of the system, and not the grey of a window's background: the cards
         // stand out from the strip, and what they hold is read on the paper it would be read on.
         .background(
@@ -88,7 +91,7 @@ struct ClipCardView: View {
             if tagColor == nil {
                 Image(nsImage: AppIcons.icon(bundleID: item.sourceAppBundleID))
                     .resizable()
-                    .frame(width: PanelMetrics.cardIconSize, height: PanelMetrics.cardIconSize)
+                    .frame(width: density.cardIconSize, height: density.cardIconSize)
             }
             Text(item.sourceAppName ?? "Unknown")
                 .font(.callout.bold())
@@ -128,8 +131,8 @@ struct ClipCardView: View {
             }
         } else {
             Text(String((item.text ?? "").prefix(Self.previewLength)))
-                .font(.system(size: PanelMetrics.textFontSize))
-                .lineLimit(PanelMetrics.textLineLimit)
+                .font(font.font)
+                .lineLimit(PanelMetrics.textLineLimit(density: density, font: font))
         }
     }
 

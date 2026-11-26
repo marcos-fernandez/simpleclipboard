@@ -1,5 +1,5 @@
-/// Whether the app's item is in the menu bar. With it hidden, its menu opens from a wrench next to the search field
-/// of the history.
+/// Whether the app's item is in the menu bar. Shown or hidden, its menu also opens from the button at the start of
+/// the search row of the history.
 public enum MenuBarIcon {
     /// The "Show in Menu Bar" setting. `stored`: the saved value, missing until the user changes it, when the item is
     /// shown as before the setting existed.

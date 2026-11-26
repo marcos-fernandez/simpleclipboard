@@ -14,14 +14,28 @@ private struct SearchFocusRing: Shape {
     }
 }
 
-/// Holds the AppKit view under the wrench, which AppKit needs to open a menu from. Owned by `PanelController` and
+/// The icon of the menu-bar item as it is now, for the menu button of the history.
+struct MenuIcon: Equatable {
+    let image: NSImage
+    /// While paused, as the menu-bar item is.
+    let isDimmed: Bool
+    /// What the button is called, with what the icon says.
+    let label: String
+
+    /// By what the icon says, which its label holds, and not by its image, drawn anew each time.
+    static func == (lhs: MenuIcon, rhs: MenuIcon) -> Bool {
+        lhs.isDimmed == rhs.isDimmed && lhs.label == rhs.label
+    }
+}
+
+/// Holds the AppKit view under the menu button, which AppKit needs to open a menu from. Owned by `PanelController` and
 /// not by the view: this toolchain has no SwiftUI macros, so no `@State`.
 @MainActor
 final class MenuAnchor {
     weak var view: NSView?
 }
 
-/// An empty AppKit view, put behind the wrench so its frame is the wrench's.
+/// An empty AppKit view, put behind the menu button so its frame is the button's.
 private struct MenuAnchorView: NSViewRepresentable {
     let anchor: MenuAnchor
 
@@ -41,9 +55,9 @@ struct HistoryView: View {
     let onPick: (ClipItem) -> Void
     /// Puts the keyboard back in the search field, after its text, once an overlay that took it closes.
     let onRestoreSearchFocus: () -> Void
-    /// Filled with the view behind the wrench, for `onShowMenu` to open the menu from.
+    /// Filled with the view behind the menu button, for `onShowMenu` to open the menu from.
     let menuAnchor: MenuAnchor
-    /// Opens the menu of the menu-bar item from the wrench.
+    /// Opens the menu of the menu-bar item from the menu button.
     let onShowMenu: () -> Void
 
     @FocusState private var searchFocused: Bool
@@ -54,9 +68,6 @@ struct HistoryView: View {
         VStack(spacing: PanelMetrics.stripSpacing) {
             // One row, centred: the search field keeps its width and the tabs take what they need.
             HStack(spacing: PanelMetrics.searchRowSpacing) {
-                if state.showsMenuButton {
-                    menuButton
-                }
                 // Drawn here: taller and rounder than the system's bordered field, like the search of System Settings.
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
@@ -93,9 +104,12 @@ struct HistoryView: View {
                 }
                 TabBarView(store: store, state: state)
             }
-            // Clear at both ends, so the field and the tabs stay in the middle with the share button at the end.
-            .padding(.horizontal, PanelMetrics.shareButtonSize + PanelMetrics.searchRowSpacing)
+            // Clear at both ends, so the field and the tabs stay in the middle with a button at each end.
+            .padding(.horizontal, PanelMetrics.searchRowHeight + PanelMetrics.searchRowSpacing)
             .frame(maxWidth: .infinity)
+            .overlay(alignment: .leading) {
+                menuButton
+            }
             .overlay(alignment: .trailing) {
                 shareButton(results, selectedIndex: selectedIndex)
             }
@@ -142,26 +156,29 @@ struct HistoryView: View {
         }
     }
 
-    /// Opens the menu of the menu-bar item while that item is hidden. Round and as tall as the search field, with the
-    /// same background, so the two read as one row of controls.
+    /// Opens the menu of the menu-bar item, which may be hidden, with the icon that item has, at the size it has
+    /// there. Bare and as tall as the search field, as the share button at the other end of the row is.
+    @ViewBuilder
     private var menuButton: some View {
-        let symbolColor = state.isUpdateAvailable
-            ? Color(nsColor: .systemBlue)
-            : Color.secondary
-        let label = state.isUpdateAvailable
-            ? "\(Config.appName) Menu, update available"
-            : "\(Config.appName) Menu"
-        return Button(action: onShowMenu) {
-            Image(systemName: "wrench.adjustable")
-                .foregroundStyle(symbolColor)
-                .frame(width: PanelMetrics.searchRowHeight, height: PanelMetrics.searchRowHeight)
-                .background(Color.primary.opacity(0.08), in: Circle())
-                .contentShape(Circle())
+        if let icon = state.menuIcon {
+            Button(action: onShowMenu) {
+                Image(nsImage: icon.image)
+                    // Tints the plain icon; the one of an update keeps its own blue.
+                    .foregroundStyle(.secondary)
+                    .opacity(
+                        icon.isDimmed
+                            ? PanelMetrics.menuIconDimming
+                            : 1
+                    )
+                    .frame(width: PanelMetrics.searchRowHeight, height: PanelMetrics.searchRowHeight)
+                    // The whole square is the target, not only the drawn parts.
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background(MenuAnchorView(anchor: menuAnchor))
+            .help(icon.label)
+            .accessibilityLabel(icon.label)
         }
-        .buttonStyle(.plain)
-        .background(MenuAnchorView(anchor: menuAnchor))
-        .help(label)
-        .accessibilityLabel(label)
     }
 
     /// Another search or tab is another list: nothing selected, and the strip back at its first card.
@@ -179,7 +196,8 @@ struct HistoryView: View {
         return ShareButton(isEnabled: canShare) {
             selected.map { CardShare.items(for: $0, store: store) } ?? []
         }
-        .frame(width: PanelMetrics.shareButtonSize, height: PanelMetrics.shareButtonSize)
+        // As large as the menu button at the other end of the row.
+        .frame(width: PanelMetrics.searchRowHeight, height: PanelMetrics.searchRowHeight)
     }
 
     private var emptyMessage: String {
@@ -211,6 +229,8 @@ struct HistoryView: View {
                 ForEach(results) { item in
                     ClipCardView(
                         appColor: AppIcons.color(bundleID: item.sourceAppBundleID),
+                        density: state.density,
+                        font: state.cardFont,
                         item: item,
                         image: ThumbnailCache.image(for: item, store: store),
                         isSelected: item.id == selectedCardID,

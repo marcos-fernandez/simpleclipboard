@@ -47,8 +47,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var resumeItem: NSMenuItem!
     private var resumeSeparator: NSMenuItem!
 
+    private static let cardFontKey = "cardFont"
     private static let ignoredAppsKey = "ignoredSourceBundleIDs"
     private static let loginItemRegisteredKey = "loginItemRegistered"
+    private static let panelDensityKey = "panelDensity"
     private static let pausedUntilKey = "pausedUntil"
     private static let pickActionKey = "pickAction"
     private static let securedAppsKey = "concealedSourceBundleIDs"
@@ -59,8 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// What "Reset All Settings…" removes: what the settings window and the welcome save, and a pause, so the app
     /// comes back recording. Not the keys of the backup, which say what it has done and are no choice of the user.
     private static let settingsKeys = [
-        ignoredAppsKey, loginItemRegisteredKey, pausedUntilKey, pickActionKey, securedAppsKey, securedLifetimeKey,
-        showsMenuBarIconKey, welcomeShownKey,
+        cardFontKey, ignoredAppsKey, loginItemRegisteredKey, panelDensityKey, pausedUntilKey, pickActionKey,
+        securedAppsKey, securedLifetimeKey, showsMenuBarIconKey, welcomeShownKey,
     ]
 
     private let settingsState = SettingsState()
@@ -103,8 +105,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Whether this launch is the first of the app on this Mac: its data folder was not there. Set at launch.
     private var isNewInstall = false
 
+    private var cardFont: CardFont {
+        CardFont(stored: UserDefaults.standard.string(forKey: Self.cardFontKey))
+    }
+
     private var isPaused: Bool {
         Pause.isActive(until: pausedUntil, now: Date())
+    }
+
+    private var panelDensity: PanelDensity {
+        PanelDensity(stored: UserDefaults.standard.string(forKey: Self.panelDensityKey))
     }
 
     /// Saved, so quitting or restarting does not end a pause.
@@ -241,6 +251,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 store.promote(id: item.id)
             }
         }
+        panel.cardFont = cardFont
+        panel.density = panelDensity
 
         hotkey = HotkeyManager { [weak self] in
             self?.panel.toggle()
@@ -271,8 +283,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 resetPrivacy: { [weak self] in
                     self?.resetPrivacy()
                 },
+                setCardFont: { [weak self] font in
+                    self?.setCardFont(font)
+                },
                 setOpensAtLogin: { [weak self] isOn in
                     self?.setOpensAtLogin(isOn)
+                },
+                setPanelDensity: { [weak self] density in
+                    self?.setPanelDensity(density)
                 },
                 setPickAction: { [weak self] action in
                     self?.setPickAction(action)
@@ -345,8 +363,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setPickAction(state.pickAction)
     }
 
-    /// Opening the app again (Finder, Spotlight, `open`) shows the history, whose wrench opens the menu. It is the way
-    /// in that is left with the menu-bar icon hidden, by the setting or by macOS, and ⇧⌘V taken by another app:
+    /// Opening the app again (Finder, Spotlight, `open`) shows the history, whose menu button opens the menu. It is the
+    /// way in that is left with the menu-bar icon hidden, by the setting or by macOS, and ⇧⌘V taken by another app:
     /// registering it succeeds even then.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         panel.show()
@@ -455,20 +473,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// The one place that draws the menu-bar icon: with an arrow when a release is out, dimmed while paused.
+    /// The one place that draws the menu-bar icon: with an arrow when a release is out, dimmed while paused. The menu
+    /// button of the history shows the same icon, so the two never disagree.
     private func refreshStatusIcon() {
         let hasUpdate = availableUpdate != nil
         let isOnPause = isPaused
         let plain = "doc.on.clipboard"
-        let description = [
-            Config.appName,
+        let states = [
             hasUpdate
                 ? "update available"
                 : nil,
             isOnPause
                 ? "paused"
                 : nil,
-        ].compactMap { $0 }.joined(separator: ", ")
+        ].compactMap { $0 }
+        let description = ([Config.appName] + states).joined(separator: ", ")
         var icon = NSImage(
             systemSymbolName: hasUpdate
                 ? "arrow.up.doc.on.clipboard"
@@ -481,10 +500,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             icon = icon?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.systemBlue]))
         }
         // Falls back to the plain icon: a symbol missing on this macOS would leave the menu-bar item invisible.
-        statusItem.button?.image = icon ?? NSImage(systemSymbolName: plain, accessibilityDescription: description)
+        icon = icon ?? NSImage(systemSymbolName: plain, accessibilityDescription: description)
+        statusItem.button?.image = icon
         // Paused is the same icon dimmed, as the system dims what is off, and not another symbol: in the menu bar
         // the icon is all that says whose item it is. It still opens the menu.
         statusItem.button?.appearsDisabled = isOnPause
+        panel.menuIcon = icon.map {
+            MenuIcon(
+                image: $0,
+                isDimmed: isOnPause,
+                label: (["\(Config.appName) Menu"] + states).joined(separator: ", ")
+            )
+        }
     }
 
     // MARK: pause
@@ -538,12 +565,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pauseItem.title = "Paused until \(end.formatted(date: .omitted, time: .shortened))"
     }
 
-    /// Shows or hides the menu-bar item, and the wrench of the history that stands in for it.
+    /// Shows or hides the menu-bar item.
     private func applyMenuBarIconSetting() {
-        let isShown = isMenuBarIconShown
         // Hidden, not removed: it comes back in the place the user gave it in the menu bar.
-        statusItem.isVisible = isShown
-        panel.showsMenuButton = !isShown
+        statusItem.isVisible = isMenuBarIconShown
     }
 
     private func setShowsMenuBarIcon(_ isOn: Bool) {
@@ -663,7 +688,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateItem.isHidden = availableUpdate == nil
         updateSeparator.isHidden = availableUpdate == nil
         refreshUpdateItem()
-        panel.isUpdateAvailable = availableUpdate != nil
         // Set here and not in menuNeedsUpdate: the icon has to change without the menu being opened.
         refreshStatusIcon()
     }
@@ -1102,6 +1126,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         settingsState.opensAtLogin = SMAppService.mainApp.status == .enabled
+        settingsState.cardFont = cardFont
+        settingsState.panelDensity = panelDensity
         settingsState.pickAction = pickAction
         settingsState.securedLifetime = securedLifetime
         settingsState.isAccessibilityGranted = AXIsProcessTrusted()
@@ -1212,6 +1238,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             UserDefaults.standard.removeObject(forKey: key)
         }
         restart()
+    }
+
+    private func setCardFont(_ font: CardFont) {
+        UserDefaults.standard.set(font.rawValue, forKey: Self.cardFontKey)
+        panel.cardFont = cardFont
+        refreshSettings()
+    }
+
+    private func setPanelDensity(_ density: PanelDensity) {
+        UserDefaults.standard.set(density.rawValue, forKey: Self.panelDensityKey)
+        panel.density = panelDensity
+        refreshSettings()
     }
 
     private func setPickAction(_ action: PickAction) {
