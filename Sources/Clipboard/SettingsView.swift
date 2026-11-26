@@ -3,12 +3,14 @@ import ClipboardCore
 import Observation
 import SwiftUI
 
-/// The panes of the settings window, in the order of the sidebar: alphabetical. Only the ones with something in them:
-/// a pane is added here together with its content.
+/// The panes of the settings window. Only the ones with something in them: a pane is added here together with its
+/// content.
 enum SettingsPane: CaseIterable {
-    case about
+    // In the order of the sidebar, do not sort: "General" first and "About" last, as in any settings window, and the
+    // others between them in alphabetical order.
     case general
     case privacy
+    case about
 
     var symbolName: String {
         switch self {
@@ -225,8 +227,9 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .hidden()
                 }
+                // At the height of the tallest one: a pane that stretches puts what closes it at the bottom of the
+                // window, whatever its own height.
                 content(of: state.pane, atItsTallest: false)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(width: Self.paneWidth, alignment: .topLeading)
@@ -443,15 +446,14 @@ struct SettingsView: View {
                                 caption: "The item is pasted into the app you are using."
                             )
                             if showsAccessibilityNotice {
-                                HStack(spacing: PickOptionRow.spacing) {
-                                    // As wide as the radio button, so the notice lines up with the option's text.
-                                    Image(systemName: "circle")
-                                        .hidden()
+                                HStack(spacing: PickOptionRow.noticeSpacing) {
                                     Text("Accessibility permission not granted")
                                         .font(.callout)
                                     Button("Open System Settings…", action: actions.openAccessibilitySettings)
                                         .controlSize(.small)
                                 }
+                                // Lined up with the option's text.
+                                .padding(.leading, RadioButton.titleInset)
                             }
                         }
                         pickOption(
