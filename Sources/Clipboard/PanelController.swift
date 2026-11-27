@@ -39,14 +39,15 @@ final class PanelState {
     var showRequest = 0
     /// Active tab. Back to .history when the panel opens after a card was picked.
     var scope: HistoryStore.Scope = .history
-    /// Whether the wrench next to the search field is shown: only while the menu-bar item, whose menu it opens, is
-    /// hidden.
-    var showsMenuButton = false
-    /// Drawn on the wrench as on the menu-bar item, which is not there to show it.
-    var isUpdateAvailable = false
+    /// What the menu button shows: the icon of the menu-bar item, which may not be there to show it.
+    var menuIcon: MenuIcon?
+
+    /// The font of the text of the cards, and their size: settings.
+    var cardFont = CardFont.system
+    var density = PanelDensity.comfortable
 
     /// Set on every show, from the screen the strip opens on.
-    var cardWidth = PanelMetrics.minCardWidth
+    var cardWidth: CGFloat = PanelDensity.comfortable.minCardWidth
     /// How many cards fit in view, and how many of them, from the first in view, show a shortcut (see
     /// `CardShortcuts`).
     var cardCount = 1
@@ -196,7 +197,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         kVK_ANSI_6: 6, kVK_ANSI_7: 7, kVK_ANSI_8: 8, kVK_ANSI_9: 9,
     ]
     private static let margin: CGFloat = 8
-    /// Between the wrench and the menu it opens.
+    /// Between the menu button and the menu it opens.
     private static let menuGap: CGFloat = 4
 
     private let store: HistoryStore
@@ -211,17 +212,29 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var startsClean = true
     private let menuAnchor = MenuAnchor()
 
-    /// The menu of the menu-bar item, opened from the wrench while that item is hidden.
+    /// The menu of the menu-bar item, also opened from the menu button of the history.
     var menu: NSMenu?
 
-    var showsMenuButton: Bool {
-        get { state.showsMenuButton }
-        set { state.showsMenuButton = newValue }
+    var cardFont: CardFont {
+        get { state.cardFont }
+        set { state.cardFont = newValue }
     }
 
-    var isUpdateAvailable: Bool {
-        get { state.isUpdateAvailable }
-        set { state.isUpdateAvailable = newValue }
+    /// Takes effect the next time the strip opens, which sizes it.
+    var density: PanelDensity {
+        get { state.density }
+        set { state.density = newValue }
+    }
+
+    /// Set every time the menu-bar item is drawn, which is every time its menu opens: only one that says something
+    /// else is kept, so the history is not drawn again for nothing.
+    var menuIcon: MenuIcon? {
+        get { state.menuIcon }
+        set {
+            if state.menuIcon != newValue {
+                state.menuIcon = newValue
+            }
+        }
     }
 
     init(store: HistoryStore, onPick: @escaping (ClipItem, NSRunningApplication?) -> Void) {
@@ -302,13 +315,14 @@ final class PanelController: NSObject, NSWindowDelegate {
 
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
-        guard let visible = screen?.visibleFrame else {
+        guard let screen else {
             return
         }
+        let visible = screen.visibleFrame
         let stripWidth = visible.width - 2 * Self.margin
         let layout = StripLayout(
             width: PanelMetrics.cardRowWidth(stripWidth: stripWidth),
-            minCardWidth: PanelMetrics.minCardWidth,
+            minCardWidth: state.density.minCardWidth,
             spacing: PanelMetrics.cardSpacing,
             maxCardCount: CardShortcuts.digits.count
         )
@@ -321,9 +335,11 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.setFrame(
             NSRect(
                 x: visible.minX + Self.margin,
-                y: visible.minY + Self.margin,
+                // At the bottom of the screen and not of what the Dock leaves free: over a Dock that is there, which
+                // the level of the panel allows, so the strip is in the same place whether the Dock hides or not.
+                y: screen.frame.minY + Self.margin,
                 width: stripWidth,
-                height: PanelMetrics.stripHeight
+                height: PanelMetrics.stripHeight(density: state.density)
             ),
             display: true
         )
@@ -416,7 +432,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         return nil
     }
 
-    /// Opens `menu` above the wrench: the strip sits at the bottom of the screen, with no room under it.
+    /// Opens `menu` above the menu button: the strip sits at the bottom of the screen, with no room under it.
     private func showMenu() {
         guard let menu, let anchor = menuAnchor.view else {
             return
