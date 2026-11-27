@@ -64,9 +64,9 @@ to open at login. Both can be changed later in Settings.
 ### Updates
 
 The app checks GitHub for a new release shortly after launch and then once a day; "Check for Updates…" in
-Settings > About checks right away. When there is one, the menu-bar icon turns blue, with an arrow (when it is
-hidden, the wrench turns blue), and the menu shows "Update Available". Choosing it downloads the release's disk
-image, checks that the app in it is signed like the running one and is the version offered, puts it in place and
+Settings > About checks right away. When there is one, the menu-bar icon turns blue, with an arrow (as does the
+menu button of the history), and the menu shows "Update Available". Choosing it downloads the release's disk image,
+checks that the app in it is signed like the running one and is the version offered, puts it in place and
 asks whether to restart now. If any of that fails, it offers the release page instead. A copy built from the source
 code is not signed like the releases, so it always ends at the release page.
 
@@ -77,7 +77,8 @@ the clipboard is sent.
 
 ### The history
 
-`⇧⌘V` opens it, with the keyboard on its cards, at most nine in view.
+`⇧⌘V` opens it at the bottom of the screen the pointer is on, over the Dock, with the keyboard on its cards, at most
+nine in view.
 
 | Key | What it does |
 | --- | --- |
@@ -120,8 +121,8 @@ the share menu of macOS; not the ones copied from the "Secured Apps".
 ### The menu
 
 The menu-bar icon opens the menu: "Open History", "Clear History…", the backup and the sync between Macs,
-"Settings…", "Pause" and "Quit". With the icon hidden (see Settings), the same menu opens from a wrench to the left
-of the search field of the history.
+"Settings…", "Pause" and "Quit". The same menu opens from the button at the top left of the history, which shows
+the same icon and is there whether the menu-bar icon is shown or hidden (see Settings).
 
 ### Pause
 
@@ -141,14 +142,20 @@ change pane, unless a list has the focus). With the Settings window in front, a 
 <img src="docs/images/settings-general.png" alt="The General pane of the settings" width="520">
 
 - **Open at Login.**
-- **Show in Menu Bar**, which hides the menu-bar icon when off: its menu then opens from a wrench to the left of the
-  search field of the history (`⇧⌘V`). If `⇧⌘V` cannot be registered the icon stays, as nothing else would open the
+- **Show in Menu Bar**, which hides the menu-bar icon when off: its menu still opens from the button at the top
+  left of the history (`⇧⌘V`). If `⇧⌘V` cannot be registered the icon stays, as nothing else would open the
   app. Opening the app again (from Finder or Spotlight) also shows the history, for when another app has taken
   `⇧⌘V`; an item picked there is only copied, as SimpleClipboard is then the app in front.
 - **Paste Items**: what happens when an item is picked. "Paste Directly", or "Copy to Clipboard", which leaves the
   pasting to you.
 - **Reset All Settings…** puts the settings back to their defaults and restarts the app, which then asks again how
   to paste and whether to open at login. A pause ends; the history, the tags and the backup stay as they are.
+
+### Appearance
+
+- **Density**: the size of the cards of the history. "Comfortable", or "Compact", with smaller cards: the history
+  takes less of the screen and shows more of them, up to the nine it shows at most.
+- **Font**: of the text of the cards. "System", or "Monospaced", in which columns and code keep their shape.
 
 ### Privacy
 

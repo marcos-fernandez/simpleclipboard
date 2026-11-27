@@ -3,17 +3,22 @@ import ClipboardCore
 import Observation
 import SwiftUI
 
-/// The panes of the settings window, in the order of the sidebar: alphabetical. Only the ones with something in them:
-/// a pane is added here together with its content.
+/// The panes of the settings window. Only the ones with something in them: a pane is added here together with its
+/// content.
 enum SettingsPane: CaseIterable {
-    case about
+    // In the order of the sidebar, do not sort: "General" first and "About" last, as in any settings window, and the
+    // others between them in alphabetical order.
     case general
+    case appearance
     case privacy
+    case about
 
     var symbolName: String {
         switch self {
         case .general:
             return "gearshape"
+        case .appearance:
+            return "paintbrush"
         case .privacy:
             return "hand.raised"
         case .about:
@@ -25,6 +30,8 @@ enum SettingsPane: CaseIterable {
         switch self {
         case .general:
             return "General"
+        case .appearance:
+            return "Appearance"
         case .privacy:
             return "Privacy"
         case .about:
@@ -89,11 +96,13 @@ struct AppRow: Identifiable {
 @Observable
 final class SettingsState {
     var apps: [PrivacyList: [AppRow]] = [:]
-    /// General and not the first row of the sidebar: About is first only by its name.
+    /// General, the first row of the sidebar, as the settings window of any app opens.
     var pane = SettingsPane.general
     /// The app selected in each list of the Privacy pane, by bundle identifier.
     var selectedAppID: [PrivacyList: String] = [:]
+    var cardFont = CardFont.system
     var opensAtLogin = false
+    var panelDensity = PanelDensity.comfortable
     var pickAction = PickAction.pasteDirectly
     var securedLifetime = Config.concealedLifetime
     var isAccessibilityGranted = false
@@ -122,7 +131,9 @@ struct SettingsActions {
     let removeApp: @MainActor (String, PrivacyList) -> Void
     let resetAllSettings: @MainActor () -> Void
     let resetPrivacy: @MainActor () -> Void
+    let setCardFont: @MainActor (CardFont) -> Void
     let setOpensAtLogin: @MainActor (Bool) -> Void
+    let setPanelDensity: @MainActor (PanelDensity) -> Void
     let setPickAction: @MainActor (PickAction) -> Void
     let setSecuredLifetime: @MainActor (TimeInterval) -> Void
     let setShowsMenuBarIcon: @MainActor (Bool) -> Void
@@ -225,8 +236,9 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .hidden()
                 }
+                // At the height of the tallest one: a pane that stretches puts what closes it at the bottom of the
+                // window, whatever its own height.
                 content(of: state.pane, atItsTallest: false)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(width: Self.paneWidth, alignment: .topLeading)
@@ -239,6 +251,8 @@ struct SettingsView: View {
         switch pane {
         case .general:
             general(showsAccessibilityNotice: atItsTallest || isAccessibilityNoticeDue)
+        case .appearance:
+            appearance
         case .privacy:
             privacy
         case .about:
@@ -288,6 +302,36 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(Self.headerInset)
+    }
+
+    private var appearance: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Out of the form, which would box them: the pictures are loose under their title.
+            VStack(alignment: .leading, spacing: Self.optionSpacing) {
+                Text("Density")
+                    .font(.headline)
+                HStack(spacing: Self.optionSpacing) {
+                    ForEach(PanelDensity.allCases, id: \.self) { density in
+                        DensityTile(density: density, isSelected: state.panelDensity == density) {
+                            actions.setPanelDensity(density)
+                        }
+                    }
+                }
+            }
+            .padding([.horizontal, .top], Self.headerInset)
+            Form {
+                Picker(
+                    "Font",
+                    selection: Binding(get: { state.cardFont }, set: { actions.setCardFont($0) })
+                ) {
+                    ForEach(CardFont.allCases, id: \.self) { font in
+                        Text(font.title)
+                            .tag(font)
+                    }
+                }
+            }
+            .formStyle(.grouped)
+        }
     }
 
     private var privacy: some View {
@@ -419,17 +463,13 @@ struct SettingsView: View {
                         // crashes converting a @MainActor function to the plain one a Binding takes.
                         isOn: Binding(get: { state.opensAtLogin }, set: { actions.setOpensAtLogin($0) })
                     )
-                    // A grouped form draws the second text of the label under the first, in the secondary style.
                     Toggle(isOn: Binding(get: { state.showsMenuBarIcon }, set: { actions.setShowsMenuBarIcon($0) })) {
                         Text("Show in Menu Bar")
-                        Text(
-                            state.canHideMenuBarIcon
-                                ? """
-                                    When it is off, the menu opens from the wrench next to the search field of the \
-                                    history.
-                                    """
-                                : "⇧⌘V could not be set up, and nothing else would open the app: the icon stays."
-                        )
+                        // A grouped form draws the second text of the label under the first, in the secondary
+                        // style. Only to say why the switch cannot be used.
+                        if !state.canHideMenuBarIcon {
+                            Text("⇧⌘V could not be set up, and nothing else would open the app: the icon stays.")
+                        }
                     }
                     .disabled(!state.canHideMenuBarIcon)
                 }
@@ -443,15 +483,14 @@ struct SettingsView: View {
                                 caption: "The item is pasted into the app you are using."
                             )
                             if showsAccessibilityNotice {
-                                HStack(spacing: PickOptionRow.spacing) {
-                                    // As wide as the radio button, so the notice lines up with the option's text.
-                                    Image(systemName: "circle")
-                                        .hidden()
+                                HStack(spacing: PickOptionRow.noticeSpacing) {
                                     Text("Accessibility permission not granted")
                                         .font(.callout)
                                     Button("Open System Settings…", action: actions.openAccessibilitySettings)
                                         .controlSize(.small)
                                 }
+                                // Lined up with the option's text.
+                                .padding(.leading, RadioButton.titleInset)
                             }
                         }
                         pickOption(
