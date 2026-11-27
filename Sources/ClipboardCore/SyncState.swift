@@ -85,9 +85,11 @@ public struct SyncItem: Codable, Equatable, Sendable {
         )
     }
 
-    /// A deletion only removes an item it happened after: copying, tagging or naming it again later brings it back.
+    /// A deletion only removes an item it happened after: copying or tagging it again later brings it back. Not
+    /// naming it: a name says nothing about wanting the item, and a Mac on a version from before the names would
+    /// not count it, so the two would not agree on which items are left.
     var lastChange: Date {
-        max(createdAt, tagChangedAt, customNameChangedAt ?? SyncState.unstamped)
+        max(createdAt, tagChangedAt)
     }
 }
 

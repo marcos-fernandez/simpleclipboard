@@ -128,6 +128,14 @@ struct StripLayoutTests {
         #expect(StripLayout.dropPosition(from: 0, movedBy: 500, slotWidth: 232, itemCount: 0) == 0)
     }
 
+    @Test func theCardsADraggedOnePassesAreTheOnesBetweenWhereItWasAndWhereItIs() {
+        // Forward: the ones after it, up to the one whose place it takes.
+        #expect(StripLayout.passedPositions(from: 1, to: 3) == 2..<4)
+        // Back: from the one whose place it takes, up to the one before it.
+        #expect(StripLayout.passedPositions(from: 3, to: 1) == 1..<3)
+        #expect(StripLayout.passedPositions(from: 2, to: 2).isEmpty)
+    }
+
     // The room left for the cards on screens 1512 and 2560 pt wide. More of the compact cards fit, but never more
     // than there are shortcuts: on the wide screen they are only lower.
     @Test(arguments: [

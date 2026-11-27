@@ -158,6 +158,9 @@ public final class HistoryStore {
         // is also a deletion other Macs must apply, so the value does not stay there as plain text.
         var deletions: [SyncDeletion] = []
         if !item.isConcealed {
+            if let previous {
+                keepOrder(ofTagOf: previous)
+            }
             item.tagID = previous?.tagID
             item.tagChangedAt = previous?.tagChangedAt
             item.customName = previous?.customName
@@ -185,6 +188,7 @@ public final class HistoryStore {
         guard let index = items.firstIndex(where: { $0.id == id }) else {
             return
         }
+        keepOrder(ofTagOf: items[index])
         var item = items.remove(at: index)
         item.createdAt = stamp(after: item.createdAt)
         items.insert(item, at: 0)
@@ -214,7 +218,7 @@ public final class HistoryStore {
             return true
         }
         items[index].customName = newName
-        items[index].customNameChangedAt = stamp(after: SyncItem(items[index]).lastChange)
+        items[index].customNameChangedAt = stamp(after: items[index].customNameChangedAt)
         persist()
         return true
     }
@@ -261,14 +265,16 @@ public final class HistoryStore {
             }
             // The tag it has, chosen again (it is the one marked in the menu, and the first of the picker), is
             // still a choice made now, which the other Macs have to hear of; but the item was already in the tag,
-            // and keeps its place there.
-            let comesIn = items[index].tagID != tagID
+            // and keeps its place there. One that comes in goes first.
+            if items[index].tagID != tagID {
+                takeOut(items[index], ofTheOrderOfTag: items[index].tagID)
+                let others = orderedItems(ofTag: tagID).filter { $0.id != itemID }
+                setOrder([items[index].contentHash] + others.map(\.contentHash), ofTag: tagID)
+            }
             items[index].tagID = tagID
             items[index].tagChangedAt = stamp(after: items[index].tagChangedAt)
-            if comesIn {
-                putFirst(items[index].contentHash, inTag: tagID)
-            }
         } else if items[index].tagID != nil {
+            takeOut(items[index], ofTheOrderOfTag: items[index].tagID)
             untag { $0.id == itemID }
             prune()
         }
@@ -300,15 +306,13 @@ public final class HistoryStore {
     }
 
     /// Moves an item of a tag to the place another item of that tag has, in the order of the tag: the items between
-    /// the two move one place towards where it was. From then on the tag keeps the order it is given, whatever is
-    /// copied or pasted. Returns false unless both items have the same tag.
+    /// the two move one place towards where it was. Returns false unless both items have the same tag.
     @discardableResult
     public func moveItem(id: UUID, toPlaceOf targetID: UUID) -> Bool {
-        guard let tagID = items.first(where: { $0.id == id })?.tagID,
-              let tagIndex = tags.firstIndex(where: { $0.id == tagID }) else {
+        guard let tagID = items.first(where: { $0.id == id })?.tagID else {
             return false
         }
-        var ordered = tags[tagIndex].ordered(items.filter { $0.tagID == tagID })
+        var ordered = orderedItems(ofTag: tagID)
         guard let from = ordered.firstIndex(where: { $0.id == id }),
               let target = ordered.firstIndex(where: { $0.id == targetID }) else {
             return false
@@ -317,8 +321,7 @@ public final class HistoryStore {
             return true
         }
         ordered.insert(ordered.remove(at: from), at: target)
-        tags[tagIndex].itemOrder = ordered.map(\.contentHash)
-        tags[tagIndex].itemOrderChangedAt = stamp(after: tags[tagIndex].itemOrderChangedAt)
+        setOrder(ordered.map(\.contentHash), ofTag: tagID)
         persist()
         return true
     }
@@ -343,8 +346,9 @@ public final class HistoryStore {
     ///   on, everything they did since that backup.
     /// There is no default: forgetting the choice would silently pick one of the two.
     public func reloadFromDisk(markingChanges: Bool) {
+        // With the stamp of the name, which `lastChange` leaves out: the restored name has to be the newest too.
         let previousItems = Dictionary(
-            items.filter { !$0.isConcealed }.map { ($0.contentHash, SyncItem($0).lastChange) }, uniquingKeysWith: max
+            items.filter { !$0.isConcealed }.map { ($0.contentHash, Self.lastStamp(of: $0)) }, uniquingKeysWith: max
         )
         let previousTags = Dictionary(tags.map { ($0.id, $0.changedAt) }, uniquingKeysWith: { first, _ in first })
         let previousOrders = Dictionary(
@@ -357,7 +361,7 @@ public final class HistoryStore {
             // Each stamp is later than the restored version, the one it replaces and a known deletion (`stamp(after:)`).
             for index in items.indices {
                 let hash = items[index].contentHash
-                let known = [SyncItem(items[index]).lastChange, previousItems[hash], knownDeletion?(hash)]
+                let known = [Self.lastStamp(of: items[index]), previousItems[hash], knownDeletion?(hash)]
                 items[index].tagChangedAt = stamp(after: known.compactMap { $0 }.max())
                 // The name that came back, or its absence, wins too.
                 items[index].customNameChangedAt = items[index].tagChangedAt
@@ -549,16 +553,45 @@ public final class HistoryStore {
         return .item(item.contentHash, at: deletedAt)
     }
 
-    /// An item that has just been given a tag goes first in it: taken out of the order, where it may still be
-    /// listed from an earlier time in the tag, and of the unlisted items the last one tagged goes first
-    /// (`Tag.ordered`).
-    private func putFirst(_ contentHash: String, inTag tagID: UUID) {
-        guard let index = tags.firstIndex(where: { $0.id == tagID }),
-              tags[index].itemOrder?.contains(contentHash) ?? false else {
+    /// The items of a tag as it shows them.
+    private func orderedItems(ofTag tagID: UUID) -> [ClipItem] {
+        let tagged = items.filter { $0.tagID == tagID }
+        return tags.first { $0.id == tagID }?.ordered(tagged) ?? tagged
+    }
+
+    /// Gives a tag the order of its items, stamped for the other Macs; nothing when it is the one it has.
+    private func setOrder(_ contentHashes: [String], ofTag tagID: UUID) {
+        guard let index = tags.firstIndex(where: { $0.id == tagID }), tags[index].itemOrder != contentHashes else {
             return
         }
-        tags[index].itemOrder?.removeAll { $0 == contentHash }
+        tags[index].itemOrder = contentHashes
         tags[index].itemOrderChangedAt = stamp(after: tags[index].itemOrderChangedAt)
+    }
+
+    /// Before `item` is dated now, which puts it first in the history: its tag keeps showing it where it is. The
+    /// order of the tag is by date until it is written down, and an item it does not list goes by its date too, so
+    /// the order on show is written down first.
+    private func keepOrder(ofTagOf item: ClipItem) {
+        guard let tagID = item.tagID, let tag = tags.first(where: { $0.id == tagID }),
+              !(tag.itemOrder?.contains(item.contentHash) ?? false) else {
+            return
+        }
+        setOrder(orderedItems(ofTag: tagID).map(\.contentHash), ofTag: tagID)
+    }
+
+    /// An item that leaves a tag leaves its order: listed there still, it would go back to its old place, and not
+    /// first, when a Mac that knows nothing of the order gives it the tag again.
+    private func takeOut(_ item: ClipItem, ofTheOrderOfTag tagID: UUID?) {
+        guard let tagID, let order = tags.first(where: { $0.id == tagID })?.itemOrder,
+              order.contains(item.contentHash) else {
+            return
+        }
+        setOrder(order.filter { $0 != item.contentHash }, ofTag: tagID)
+    }
+
+    /// The latest stamp an item carries, the one of its name included.
+    private static func lastStamp(of item: ClipItem) -> Date {
+        max(SyncItem(item).lastChange, item.customNameChangedAt ?? SyncState.unstamped)
     }
 
     /// Clears the tag of every matching item; they become "just copied" and move to the front. A user action stamps

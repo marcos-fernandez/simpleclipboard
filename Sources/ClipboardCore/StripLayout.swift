@@ -44,6 +44,14 @@ public struct StripLayout: Equatable, Sendable {
         return Int(position)
     }
 
+    /// The positions of the cards that a card dragged from `index` to `position` passes: the ones that move one
+    /// place towards where it was, to make room for it. None when it has not left its place.
+    public static func passedPositions(from index: Int, to position: Int) -> Range<Int> {
+        position > index
+            ? (index + 1)..<(position + 1)
+            : position..<index
+    }
+
     /// The position nearest to `index` that the strip can put first in view: with `itemCount` cards, the last
     /// `cardCount` fill the view, and none of them but the first can reach its leading edge.
     public static func reachableLeadingCard(_ index: Int, itemCount: Int, cardCount: Int) -> Int {

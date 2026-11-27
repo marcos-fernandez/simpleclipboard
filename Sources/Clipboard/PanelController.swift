@@ -191,6 +191,12 @@ final class PanelState {
         overlay = .renameTag(tagID: tag.id)
     }
 
+    /// Leaves the dragged card, if any, where it was.
+    func cancelDrag() {
+        draggedID = nil
+        dragDistance = 0
+    }
+
     /// Starts on the name the item has, or empty for one that shows the app it was copied from.
     func startRename(_ item: ClipItem) {
         promptText = item.customName ?? ""
@@ -323,8 +329,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
         state.selectedID = nil
         // A drag the panel was hidden in the middle of never ended.
-        state.draggedID = nil
-        state.dragDistance = 0
+        state.cancelDrag()
         // Before the overlay goes: the view gives the keyboard back to the field when one closes, and a panel that
         // was hidden with one open would do it now.
         state.hadSearchFocusBeforeOverlay = false

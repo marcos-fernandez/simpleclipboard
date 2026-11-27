@@ -178,6 +178,8 @@ struct HistoryView: View {
             startFromTheFirstCard()
         }
         .onChange(of: state.scope) {
+            // A drag belongs to the tab it started in.
+            state.cancelDrag()
             startFromTheFirstCard()
         }
     }
@@ -264,9 +266,7 @@ struct HistoryView: View {
             from: index, movedBy: state.dragDistance, slotWidth: slotWidth, itemCount: results.count
         )
         // The cards between where it was and where it would be dropped, which move one place towards where it was.
-        let passed = position > index
-            ? results[(index + 1)...position]
-            : results[position..<index]
+        let passed = results[StripLayout.passedPositions(from: index, to: position)]
         return CardDrag(
             distance: state.dragDistance,
             itemID: itemID,
@@ -284,8 +284,7 @@ struct HistoryView: View {
         let currentDrag = drag(in: results)
         let leadingIndex = state.leadingIndex(in: results)
 
-        state.draggedID = nil
-        state.dragDistance = 0
+        state.cancelDrag()
         guard let currentDrag, results[currentDrag.position].id != currentDrag.itemID else {
             return
         }

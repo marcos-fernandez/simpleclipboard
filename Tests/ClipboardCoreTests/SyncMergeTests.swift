@@ -94,12 +94,14 @@ struct SyncMergeTests {
         #expect(result.items.map(\.customName) == ["Greeting"])
     }
 
-    @Test func aNameGivenAfterADeletionBringsTheItemBack() {
+    // Unlike a copy or a tag: a Mac from before the names would not count it either, and the two have to end
+    // with the same items.
+    @Test func aNameGivenAfterADeletionDoesNotBringTheItemBack() {
         let result = merge(
             state("A", items: [named(item("hello", createdAgo: 1000), "Greeting", changedAgo: 10)]),
             state("B", deletions: [.item("hash-hello", at: at(50))])
         )
-        #expect(result.items.map(\.customName) == ["Greeting"])
+        #expect(result.items.isEmpty)
     }
 
     // A rename of the tag on one Mac and a move of its items on the other: each has its own stamp, so neither is

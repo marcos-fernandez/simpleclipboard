@@ -32,14 +32,116 @@ struct HistoryStoreOrderAndNameTests {
         store.search("", in: .tag(tag.id)).map(\.text)
     }
 
+    /// A tag as an app from before the order saved it: three items, "three" the newest, and no order.
+    func storeWithATagSavedWithoutAnOrder() -> (store: HistoryStore, tag: ClipboardCore.Tag) {
+        let tag = Tag(name: "Work", colorIndex: 0, changedAt: clock.current)
+        let texts = ["three", "two", "one"]
+        persistence.storedTags = [tag]
+        persistence.stored = texts.enumerated().map { index, text in
+            ClipItem(
+                createdAt: clock.current.addingTimeInterval(-Double(index)), kind: .text, text: text,
+                imageFileName: nil, contentHash: "hash-\(text)", source: safari, isConcealed: false, expiresAt: nil,
+                tagID: tag.id, tagChangedAt: clock.current
+            )
+        }
+        return (makeStore(), tag)
+    }
+
+    func state(_ device: String, of store: HistoryStore) -> SyncState {
+        let snapshot = store.syncSnapshot()
+        return SyncState(
+            deviceID: device, publishedAt: clock.current, items: snapshot.items, tags: snapshot.tags, deletions: []
+        )
+    }
+
     // MARK: order
 
-    @Test func aTagWithoutAnOrderShowsItsItemsNewestFirst() throws {
+    @Test func eachItemGivenATagGoesFirstInItAndIsWrittenInItsOrder() throws {
         let store = makeStore()
         let tagged = try addTagged(["one", "two", "three"], to: store)
 
         #expect(texts(of: store, in: tagged.tag) == ["three", "two", "one"])
-        #expect(store.tags[0].itemOrder == nil)
+        #expect(store.tags[0].itemOrder == store.search("", in: .tag(tagged.tag.id)).map(\.contentHash))
+        #expect(persistence.storedTags == store.tags)
+    }
+
+    @Test func aTagSavedWithoutAnOrderShowsItsItemsNewestFirst() {
+        let saved = storeWithATagSavedWithoutAnOrder()
+
+        #expect(texts(of: saved.store, in: saved.tag) == ["three", "two", "one"])
+        #expect(saved.store.tags[0].itemOrder == nil)
+    }
+
+    // Pasting dates the item now. In a tag that is still by date that would take it to the front: the order on
+    // show is written down first, so the tag stays as the user sees it.
+    @Test func pastingAnItemOfATagSavedWithoutAnOrderLeavesItWhereItIs() throws {
+        let saved = storeWithATagSavedWithoutAnOrder()
+        let one = try #require(saved.store.items.first { $0.text == "one" })
+        clock.advance(60)
+
+        saved.store.promote(id: one.id)
+
+        #expect(texts(of: saved.store, in: saved.tag) == ["three", "two", "one"])
+        #expect(saved.store.items.map(\.text) == ["one", "three", "two"])
+        #expect(saved.store.tags[0].itemOrder == ["hash-three", "hash-two", "hash-one"])
+        #expect(saved.store.tags[0].itemOrderChangedAt == clock.current)
+    }
+
+    @Test func copyingAgainAnItemOfATagThatDoesNotListItLeavesItWhereItIs() throws {
+        let store = makeStore()
+        let tagged = try addTagged(["one", "two", "three"], to: store)
+        // As saved by an app from before the order.
+        persistence.storedTags[0].itemOrder = nil
+        let relaunched = makeStore()
+        clock.advance(60)
+
+        relaunched.add(.text("one"), source: safari, concealed: false)
+
+        #expect(texts(of: relaunched, in: tagged.tag) == ["three", "two", "one"])
+        #expect(relaunched.items.map(\.text) == ["one", "three", "two"])
+    }
+
+    // The stamp of a tag is renewed by choosing the tag again and by a restore: neither is a move.
+    @Test func anItemItsTagDoesNotListStaysWhereItIsWhenItsTagIsChosenAgain() throws {
+        let saved = storeWithATagSavedWithoutAnOrder()
+        // An order that lists only one of the three, as after a merge with a Mac that knows nothing of the order:
+        // the other two go before it, newest first.
+        persistence.storedTags[0].itemOrder = ["hash-three"]
+        let store = makeStore()
+        let one = try #require(store.items.first { $0.text == "one" })
+        #expect(texts(of: store, in: saved.tag) == ["two", "one", "three"])
+        clock.advance(60)
+
+        #expect(store.setTag(itemID: one.id, tagID: saved.tag.id))
+
+        #expect(texts(of: store, in: saved.tag) == ["two", "one", "three"])
+    }
+
+    // Left in the order, it would go back to its old place when a Mac that knows nothing of the order gives it
+    // the tag again, and not first as an item that comes in.
+    @Test func anItemThatLeavesATagLeavesItsOrder() throws {
+        let store = makeStore()
+        let tagged = try addTagged(["one", "two", "three"], to: store)
+        clock.advance(60)
+
+        store.setTag(itemID: tagged.items[1].id, tagID: nil)
+
+        #expect(store.tags[0].itemOrder == [tagged.items[2].contentHash, tagged.items[0].contentHash])
+        #expect(store.tags[0].itemOrderChangedAt == clock.current)
+    }
+
+    @Test func anItemMovedToAnotherTagLeavesTheOrderOfTheFirstAndGoesFirstInTheSecond() throws {
+        let store = makeStore()
+        let tagged = try addTagged(["one", "two"], to: store)
+        let home = try #require(store.createTag(name: "Home", colorIndex: 1))
+        let other = try #require(store.add(.text("other"), source: safari, concealed: false))
+        store.setTag(itemID: other.id, tagID: home.id)
+
+        store.setTag(itemID: tagged.items[0].id, tagID: home.id)
+
+        #expect(texts(of: store, in: tagged.tag) == ["two"])
+        #expect(store.tags[0].itemOrder == [tagged.items[1].contentHash])
+        #expect(texts(of: store, in: home) == ["one", "other"])
     }
 
     @Test func anItemMovedForwardTakesThePlaceOfTheOtherAndTheOnesBetweenMoveBack() throws {
@@ -77,20 +179,23 @@ struct HistoryStoreOrderAndNameTests {
         let store = makeStore()
         let tagged = try addTagged(["one", "two"], to: store)
 
+        let tagsBefore = store.tags
+        clock.advance(60)
+
         #expect(store.moveItem(id: tagged.items[0].id, toPlaceOf: tagged.items[0].id))
 
-        #expect(store.tags[0].itemOrder == nil)
-        #expect(store.tags[0].itemOrderChangedAt == nil)
+        #expect(store.tags == tagsBefore)
     }
 
     @Test func anItemIsNotMovedToThePlaceOfOneOfAnotherTagOrOfTheHistory() throws {
         let store = makeStore()
         let tagged = try addTagged(["one", "two"], to: store)
         let loose = try #require(store.add(.text("loose"), source: safari, concealed: false))
+        let tagsBefore = store.tags
 
         #expect(!store.moveItem(id: tagged.items[0].id, toPlaceOf: loose.id))
         #expect(!store.moveItem(id: loose.id, toPlaceOf: tagged.items[0].id))
-        #expect(store.tags[0].itemOrder == nil)
+        #expect(store.tags == tagsBefore)
     }
 
     // The point of the order: pasting an item dates it now, which puts it first in the history, and it must not
@@ -273,6 +378,82 @@ struct HistoryStoreOrderAndNameTests {
         #expect(other.tags == store.tags)
         // A second round with the same data changes nothing: the stamps come back as they were sent.
         #expect(!other.applySync(SyncMerge.Result(items: snapshot.items, tags: snapshot.tags)))
+    }
+
+    // The whole way: what one Mac publishes, merged with what the other has, and applied there.
+    @Test func theNameAndTheOrderReachAnotherMacThroughTheMerge() throws {
+        let store = makeStore()
+        let tagged = try addTagged(["one", "two"], to: store)
+        store.moveItem(id: tagged.items[0].id, toPlaceOf: tagged.items[1].id)
+        store.renameItem(id: tagged.items[0].id, name: "First")
+        let other = HistoryStore(persistence: InMemoryPersistence(), now: { [clock] in clock.current })
+        other.add(.text("its own"), source: safari, concealed: false)
+
+        let result = SyncMerge.merge(
+            local: state("B", of: other), remotes: [state("A", of: store)], concealedHashes: [], now: clock.current
+        )
+        #expect(other.applySync(result))
+
+        #expect(other.search("", in: .tag(tagged.tag.id)).map(\.text) == ["one", "two"])
+        #expect(other.search("", in: .tag(tagged.tag.id)).map(\.customName) == ["First", nil])
+        #expect(other.items.map(\.text).contains("its own"))
+        // Merged again with what it now has, nothing is left to apply.
+        let again = SyncMerge.merge(
+            local: state("B", of: other), remotes: [state("A", of: store)], concealedHashes: [], now: clock.current
+        )
+        #expect(!other.applySync(again))
+    }
+
+    // A restore is the user saying which data is right: against another Mac that named the item and moved it later,
+    // what was restored is what both end with.
+    @Test func whatARestoreBringsBackWinsOverALaterNameAndOrderOnAnotherMac() throws {
+        let store = makeStore()
+        let tagged = try addTagged(["one", "two"], to: store)
+        store.renameItem(id: tagged.items[0].id, name: "Restored")
+        let other = HistoryStore(persistence: InMemoryPersistence(), now: { [clock] in clock.current })
+        other.applySync(SyncMerge.Result(items: store.syncSnapshot().items, tags: store.syncSnapshot().tags))
+        clock.advance(60)
+        other.renameItem(id: other.items[1].id, name: "Later")
+        other.moveItem(id: other.items[0].id, toPlaceOf: other.items[1].id)
+        clock.advance(60)
+
+        store.reloadFromDisk(markingChanges: true)
+        let result = SyncMerge.merge(
+            local: state("B", of: other), remotes: [state("A", of: store)], concealedHashes: [], now: clock.current
+        )
+        other.applySync(result)
+
+        #expect(other.search("", in: .tag(tagged.tag.id)).map(\.text) == ["two", "one"])
+        #expect(other.search("", in: .tag(tagged.tag.id)).map(\.customName) == [nil, "Restored"])
+    }
+
+    // MARK: files saved before
+
+    @Test func whatWasSavedBeforeTheNamesAndTheOrderIsReadAsItIs() throws {
+        let decoder = JSONDecoder()
+        let item = """
+            {"id":"173BD2D1-FE79-452C-B3EA-DEFDE5DC8F99","createdAt":817415678.2,"kind":"text","text":"hello",
+            "contentHash":"abc","sourceAppBundleID":"com.apple.Safari","sourceAppName":"Safari","isConcealed":false,
+            "tagID":"4C4C0352-7BB0-457C-8164-240FD96F11F5","tagChangedAt":817298645.7}
+            """
+        let tag = """
+            {"id":"4C4C0352-7BB0-457C-8164-240FD96F11F5","name":"Work","colorIndex":0,"changedAt":817201709.7}
+            """
+        let syncItem = """
+            {"contentHash":"abc","kind":"text","text":"hello","createdAt":817415678.2,"sourceAppName":"Safari",
+            "tagID":"4C4C0352-7BB0-457C-8164-240FD96F11F5","tagChangedAt":817298645.7}
+            """
+
+        let savedItem = try decoder.decode(ClipItem.self, from: Data(item.utf8))
+        let savedTag = try decoder.decode(ClipboardCore.Tag.self, from: Data(tag.utf8))
+        let publishedItem = try decoder.decode(SyncItem.self, from: Data(syncItem.utf8))
+        let publishedTag = try decoder.decode(SyncTag.self, from: Data(tag.utf8))
+
+        #expect(savedItem.customName == nil && savedItem.customNameChangedAt == nil)
+        #expect(savedItem.displayName == "Safari")
+        #expect(savedTag.itemOrder == nil && savedTag.itemOrderChangedAt == nil)
+        #expect(publishedItem.customName == nil && publishedItem.customNameChangedAt == nil)
+        #expect(publishedTag.itemOrder == nil && publishedTag.itemOrderChangedAt == nil)
     }
 
     @Test func aRestoreMakesItsNamesAndItsOrderWinOverTheOtherMacs() throws {
