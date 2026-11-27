@@ -47,7 +47,7 @@ final class PanelState {
     var density = PanelDensity.comfortable
 
     /// Set on every show, from the screen the strip opens on.
-    var cardWidth = PanelDensity.comfortable.minCardWidth
+    var cardWidth: CGFloat = PanelDensity.comfortable.minCardWidth
     /// How many cards fit in view, and how many of them, from the first in view, show a shortcut (see
     /// `CardShortcuts`).
     var cardCount = 1

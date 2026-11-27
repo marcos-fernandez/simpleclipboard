@@ -132,7 +132,7 @@ struct ClipCardView: View {
         } else {
             Text(String((item.text ?? "").prefix(Self.previewLength)))
                 .font(font.font)
-                .lineLimit(PanelMetrics.textLineLimit(density: density, font: font))
+                .lineLimit(PanelMetrics.textLineLimit(density: density))
         }
     }
 

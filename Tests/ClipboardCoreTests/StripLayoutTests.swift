@@ -104,4 +104,19 @@ struct StripLayoutTests {
         #expect(StripLayout.reachableLeadingCard(0, itemCount: 0, cardCount: 6) == 0)
         #expect(StripLayout.reachableLeadingCard(-1, itemCount: 8, cardCount: 6) == 0)
     }
+
+    // The room left for the cards on screens 1512 and 2560 pt wide. More of the compact cards fit, but never more
+    // than there are shortcuts: on the wide screen they are only lower.
+    @Test(arguments: [
+        (1456.0, PanelDensity.comfortable, 6),
+        (1456.0, PanelDensity.compact, 8),
+        (2504.0, PanelDensity.comfortable, 9),
+        (2504.0, PanelDensity.compact, 9),
+    ])
+    func theCompactCardsFitMoreInViewUpToTheShortcuts(width: Double, density: PanelDensity, count: Int) {
+        let layout = StripLayout(
+            width: width, minCardWidth: density.minCardWidth, spacing: Self.spacing, maxCardCount: Self.maxCardCount
+        )
+        #expect(layout.cardCount == count)
+    }
 }

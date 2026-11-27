@@ -11,8 +11,7 @@ private enum OverlayMetrics {
     static let panelCornerRadius: CGFloat = 16
     static let pickerRowCornerRadius: CGFloat = 6
     static let pickerRowInset: CGFloat = 8
-    /// The rows of the tag picker: what is shown of them at most, each one, and between two.
-    static let pickerMaxHeight: CGFloat = 180
+    /// The rows of the tag picker: each one, and between two.
     static let pickerRowHeight: CGFloat = 28
     static let pickerRowSpacing: CGFloat = 2
     /// Between the options of a section that are controls of their own, as in the settings.
@@ -22,6 +21,17 @@ private enum OverlayMetrics {
     /// Between a title and the line that explains it.
     static let titleSpacing: CGFloat = 8
     static let width: CGFloat = 320
+
+    /// What is shown of the rows of the tag picker at most, the rest by scrolling: fewer over the compact strip,
+    /// which is lower, so that the overlay fits in it with its title.
+    static func pickerMaxHeight(density: PanelDensity) -> CGFloat {
+        switch density {
+        case .comfortable:
+            return 180
+        case .compact:
+            return 120
+        }
+    }
 }
 
 /// The colour in the overlay that names a tag.
@@ -117,7 +127,9 @@ struct TagPickerOverlay: View {
             ScrollView {
                 rows(options)
             }
-            .frame(height: min(Self.height(ofRows: options.count), OverlayMetrics.pickerMaxHeight))
+            .frame(
+                height: min(Self.height(ofRows: options.count), OverlayMetrics.pickerMaxHeight(density: state.density))
+            )
         }
     }
 
