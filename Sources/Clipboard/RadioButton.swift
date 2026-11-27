@@ -23,7 +23,9 @@ struct RadioButton: NSViewRepresentable {
         @objc func clicked(_ sender: NSButton) {
             // A click turns the button on by itself. What it shows is what is chosen, which the click may not
             // change: back to it, and the view is updated if it does.
-            sender.state = isOn ? .on : .off
+            sender.state = isOn
+                ? .on
+                : .off
             action()
         }
     }
@@ -39,7 +41,9 @@ struct RadioButton: NSViewRepresentable {
     func updateNSView(_ button: NSButton, context: Context) {
         context.coordinator.action = action
         context.coordinator.isOn = isOn
-        button.state = isOn ? .on : .off
+        button.state = isOn
+            ? .on
+            : .off
         button.title = title
     }
 }
