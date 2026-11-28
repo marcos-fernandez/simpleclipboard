@@ -324,8 +324,10 @@ struct HistoryStoreTagTests {
         #expect(store.items.map(\.text) == ["restored"])
         #expect(store.items[0].tagID == restoredTag.id)
         // A restore counts as a tag change now, so sync does not take it for older than a deletion elsewhere.
+        // The order of its items too, even the lack of one: it is the restored one that has to stay.
         var stampedTag = restoredTag
         stampedTag.changedAt = clock.current
+        stampedTag.itemOrderChangedAt = clock.current
         #expect(store.tags == [stampedTag])
     }
 }

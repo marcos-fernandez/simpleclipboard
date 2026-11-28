@@ -48,6 +48,27 @@ private struct MenuAnchorView: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
+/// A card being dragged to another place in its tag.
+private struct CardDrag {
+    /// How far the card is from where it was.
+    let distance: CGFloat
+    let itemID: UUID
+    /// The cards it has passed, and how far each one moves to make room for it.
+    let passedIDs: Set<UUID>
+    let passedOffset: CGFloat
+    /// The position it would be dropped at.
+    let position: Int
+
+    func offset(of id: UUID) -> CGFloat {
+        if id == itemID {
+            return distance
+        }
+        return passedIDs.contains(id)
+            ? passedOffset
+            : 0
+    }
+}
+
 struct HistoryView: View {
     let store: HistoryStore
     @Bindable var state: PanelState
@@ -61,6 +82,11 @@ struct HistoryView: View {
     let onShowMenu: () -> Void
 
     @FocusState private var searchFocused: Bool
+
+    /// How far the pointer moves with the button down before a card is being dragged, and not clicked.
+    private static let dragThreshold: CGFloat = 8
+    /// How long the cards take to make room for the dragged one.
+    private static let makeRoomDuration = 0.15
 
     var body: some View {
         let results = state.results(in: store)
@@ -152,6 +178,8 @@ struct HistoryView: View {
             startFromTheFirstCard()
         }
         .onChange(of: state.scope) {
+            // A drag belongs to the tab it started in.
+            state.cancelDrag()
             startFromTheFirstCard()
         }
     }
@@ -217,6 +245,55 @@ struct HistoryView: View {
         return TagPalette.color(tag.colorIndex)
     }
 
+    /// The cards of a tag can be dragged to another place in it.
+    private var canReorder: Bool {
+        if case .tag = state.effectiveScope(in: store) {
+            return true
+        }
+        return false
+    }
+
+    /// The drag under way, if the card it started on is still there.
+    private func drag(in results: [ClipItem]) -> CardDrag? {
+        // Not once the tab is no longer a tag (deleted from another Mac in the middle of a drag): the gesture is
+        // then off, and may never say that it ended.
+        guard canReorder, let itemID = state.draggedID,
+              let index = results.firstIndex(where: { $0.id == itemID }) else {
+            return nil
+        }
+        let slotWidth = state.cardWidth + PanelMetrics.cardSpacing
+        let position = StripLayout.dropPosition(
+            from: index, movedBy: state.dragDistance, slotWidth: slotWidth, itemCount: results.count
+        )
+        // The cards between where it was and where it would be dropped, which move one place towards where it was.
+        let passed = results[StripLayout.passedPositions(from: index, to: position)]
+        return CardDrag(
+            distance: state.dragDistance,
+            itemID: itemID,
+            passedIDs: Set(passed.map(\.id)),
+            passedOffset: position > index
+                ? -slotWidth
+                : slotWidth,
+            position: position
+        )
+    }
+
+    /// Puts the dragged card where it was dropped. The strip stays on the cards it was showing: it follows its first
+    /// card by its id, and would scroll after it when that card is one of those that moved.
+    private func dropDraggedCard(in results: [ClipItem]) {
+        let currentDrag = drag(in: results)
+        let leadingIndex = state.leadingIndex(in: results)
+
+        state.cancelDrag()
+        guard let currentDrag, results[currentDrag.position].id != currentDrag.itemID else {
+            return
+        }
+        store.moveItem(id: currentDrag.itemID, toPlaceOf: results[currentDrag.position].id)
+        if let leadingIndex {
+            state.showFirst(leadingIndex, of: state.results(in: store))
+        }
+    }
+
     private func cards(_ results: [ClipItem], selectedIndex: Int) -> some View {
         // By id, so no indexed copy of the whole list is built on every body pass.
         let selectedCardID = results[selectedIndex].id
@@ -224,6 +301,7 @@ struct HistoryView: View {
         let leadingIndex = state.leadingIndex(in: results)
         let shortcutIDs = leadingIndex.map { results.dropFirst($0).prefix(state.cardShortcutCount).map(\.id) } ?? []
         let cardWidth = state.cardWidth
+        let currentDrag = drag(in: results)
         return ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: PanelMetrics.cardSpacing) {
                 ForEach(results) { item in
@@ -239,12 +317,42 @@ struct HistoryView: View {
                         width: cardWidth
                     )
                     .id(item.id)
+                    // While a card is dragged it follows the pointer, over the others, and the ones it passes
+                    // make room for it: the strip shows the order it will have before the card is dropped.
+                    .offset(x: currentDrag?.offset(of: item.id) ?? 0)
+                    .zIndex(
+                        item.id == currentDrag?.itemID
+                            ? 1
+                            : 0
+                    )
+                    .animation(
+                        item.id == currentDrag?.itemID
+                            ? nil
+                            : .easeOut(duration: Self.makeRoomDuration),
+                        value: currentDrag?.position
+                    )
                     .onTapGesture(count: 2) {
                         onPick(item)
                     }
                     .onTapGesture {
                         state.selectedID = item.id
                     }
+                    // Only in a tag, whose items have the order the user gives them: the history is by date. In
+                    // the space of the screen: the card moves with the drag, and so would its own.
+                    .gesture(
+                        DragGesture(minimumDistance: Self.dragThreshold, coordinateSpace: .global)
+                            .onChanged { value in
+                                state.draggedID = item.id
+                                state.selectedID = item.id
+                                state.dragDistance = value.translation.width
+                            }
+                            .onEnded { _ in
+                                dropDraggedCard(in: results)
+                            },
+                        including: canReorder
+                            ? .all
+                            : .subviews
+                    )
                     .overlay {
                         AppKitContextMenu { card in
                             CardMenu.menu(
@@ -253,6 +361,7 @@ struct HistoryView: View {
                                 tags: store.tags,
                                 onDelete: { onDelete(item) },
                                 onNewTag: { state.apply(.newTag, to: item.id, in: store) },
+                                onRename: { state.startRename(item) },
                                 onSetTag: { store.setTag(itemID: item.id, tagID: $0) },
                                 shareItems: CardShare.canShare(item, store: store)
                                     ? { CardShare.items(for: item, store: store) }

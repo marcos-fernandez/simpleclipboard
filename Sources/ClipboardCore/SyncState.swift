@@ -46,6 +46,9 @@ public struct SyncItem: Codable, Equatable, Sendable {
     public var sourceAppName: String?
     public var tagID: UUID?
     public var tagChangedAt: Date
+    /// Optional, as its date: not in the files of an app from before items could be named.
+    public var customName: String?
+    public var customNameChangedAt: Date?
 
     public init(
         contentHash: String,
@@ -56,7 +59,9 @@ public struct SyncItem: Codable, Equatable, Sendable {
         sourceAppBundleID: String?,
         sourceAppName: String?,
         tagID: UUID?,
-        tagChangedAt: Date
+        tagChangedAt: Date,
+        customName: String? = nil,
+        customNameChangedAt: Date? = nil
     ) {
         self.contentHash = contentHash
         self.kind = kind
@@ -67,17 +72,22 @@ public struct SyncItem: Codable, Equatable, Sendable {
         self.sourceAppName = sourceAppName
         self.tagID = tagID
         self.tagChangedAt = tagChangedAt
+        self.customName = customName
+        self.customNameChangedAt = customNameChangedAt
     }
 
     public init(_ item: ClipItem) {
         self.init(
             contentHash: item.contentHash, kind: item.kind, text: item.text, imageFileName: item.imageFileName,
             createdAt: item.createdAt, sourceAppBundleID: item.sourceAppBundleID, sourceAppName: item.sourceAppName,
-            tagID: item.tagID, tagChangedAt: item.tagChangedAt ?? SyncState.unstamped
+            tagID: item.tagID, tagChangedAt: item.tagChangedAt ?? SyncState.unstamped,
+            customName: item.customName, customNameChangedAt: item.customNameChangedAt
         )
     }
 
-    /// A deletion only removes an item it happened after: copying or tagging it again later brings it back.
+    /// A deletion only removes an item it happened after: copying or tagging it again later brings it back. Not
+    /// naming it: a name says nothing about wanting the item, and a Mac on a version from before the names would
+    /// not count it, so the two would not agree on which items are left.
     var lastChange: Date {
         max(createdAt, tagChangedAt)
     }
@@ -88,15 +98,30 @@ public struct SyncTag: Codable, Equatable, Sendable {
     public var name: String
     public var colorIndex: Int
     public var changedAt: Date
+    /// Optional, as its date: not in the files of an app from before the items of a tag could be put in order.
+    public var itemOrder: [String]?
+    public var itemOrderChangedAt: Date?
 
-    public init(id: UUID, name: String, colorIndex: Int, changedAt: Date) {
+    public init(
+        id: UUID,
+        name: String,
+        colorIndex: Int,
+        changedAt: Date,
+        itemOrder: [String]? = nil,
+        itemOrderChangedAt: Date? = nil
+    ) {
         self.id = id
         self.name = name
         self.colorIndex = colorIndex
         self.changedAt = changedAt
+        self.itemOrder = itemOrder
+        self.itemOrderChangedAt = itemOrderChangedAt
     }
 
     public init(_ tag: Tag) {
-        self.init(id: tag.id, name: tag.name, colorIndex: tag.colorIndex, changedAt: tag.changedAt ?? SyncState.unstamped)
+        self.init(
+            id: tag.id, name: tag.name, colorIndex: tag.colorIndex, changedAt: tag.changedAt ?? SyncState.unstamped,
+            itemOrder: tag.itemOrder, itemOrderChangedAt: tag.itemOrderChangedAt
+        )
     }
 }

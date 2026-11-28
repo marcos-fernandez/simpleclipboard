@@ -93,7 +93,7 @@ struct ClipCardView: View {
                     .resizable()
                     .frame(width: density.cardIconSize, height: density.cardIconSize)
             }
-            Text(item.sourceAppName ?? "Unknown")
+            Text(item.displayName ?? "Unknown")
                 .font(.callout.bold())
                 .lineLimit(1)
             Spacer()

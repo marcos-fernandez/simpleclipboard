@@ -75,6 +75,18 @@ struct PanelOverlayView: View {
             ) {
                 state.submitPrompt(in: store)
             }
+        case .renameItem(let itemID):
+            // The field shows, while empty, what the card is called without a name: leaving it empty goes back to it.
+            TextPromptOverlay(
+                title: "Rename the item?",
+                color: .shown(nil),
+                confirmTitle: "Rename",
+                allowsBlank: true,
+                placeholder: store.items.first { $0.id == itemID }?.sourceAppName ?? "Name",
+                state: state
+            ) {
+                state.submitPrompt(in: store)
+            }
         case .renameTag(let tagID):
             // Worded as the question of deleting one is: the name it has is in the title, the field is for the new.
             TextPromptOverlay(
@@ -183,13 +195,17 @@ struct TextPromptOverlay: View {
     let color: PromptColor
     /// What the main button says: what it does, not "OK".
     let confirmTitle: String
+    /// Whether an empty name can be sent: the name of an item, which is taken away by it.
+    var allowsBlank = false
+    /// What the empty field shows.
+    var placeholder = "Name"
     @Bindable var state: PanelState
     let onSubmit: () -> Void
 
     @FocusState private var focused: Bool
 
     var body: some View {
-        let canSubmit = !state.promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let canSubmit = allowsBlank || !state.promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         VStack(alignment: .leading, spacing: OverlayMetrics.sectionSpacing) {
             OverlayTitle(title: title)
             VStack(alignment: .leading, spacing: OverlayMetrics.optionSpacing) {
@@ -199,7 +215,7 @@ struct TextPromptOverlay: View {
                     if case .shown(let shown?) = color {
                         TagDot(color: shown, size: TagDot.dialogSize)
                     }
-                    TextField("Name", text: $state.promptText)
+                    TextField(placeholder, text: $state.promptText)
                         .textFieldStyle(.roundedBorder)
                         .controlSize(.large)
                         .focused($focused)

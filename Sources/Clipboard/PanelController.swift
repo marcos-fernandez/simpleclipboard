@@ -8,6 +8,7 @@ import SwiftUI
 enum PanelOverlay: Equatable {
     case tagPicker(itemID: UUID)
     case newTag(itemID: UUID)
+    case renameItem(itemID: UUID)
     case renameTag(tagID: UUID)
     case deleteTag(tagID: UUID)
 }
@@ -55,6 +56,11 @@ final class PanelState {
     /// The first card in view: written by the strip as it scrolls, and set to scroll it. nil while the strip has
     /// never been moved, which leaves it at its first card.
     var leadingCardID: UUID?
+
+    /// How far along the strip the dragged card is from where it was.
+    var dragDistance: CGFloat = 0
+    /// The card being dragged to another place in its tag.
+    var draggedID: UUID?
 
     /// The position in `results` of the first card in view. nil when that card is no longer there (expired, purged,
     /// deleted from another Mac): the strip stays where it was, so counting from any other card would put the
@@ -151,6 +157,9 @@ final class PanelState {
                 return
             }
             store.setTag(itemID: itemID, tagID: tag.id)
+        case .renameItem(let itemID):
+            // A blank name is one too: it takes the name away. Gone meanwhile, there is nothing to name.
+            store.renameItem(id: itemID, name: promptText)
         case .renameTag(let tagID):
             guard store.tags.contains(where: { $0.id == tagID }) else {
                 overlay = nil
@@ -180,6 +189,18 @@ final class PanelState {
     func startRename(_ tag: Tag) {
         promptText = tag.name
         overlay = .renameTag(tagID: tag.id)
+    }
+
+    /// Leaves the dragged card, if any, where it was.
+    func cancelDrag() {
+        draggedID = nil
+        dragDistance = 0
+    }
+
+    /// Starts on the name the item has, or empty for one that shows the app it was copied from.
+    func startRename(_ item: ClipItem) {
+        promptText = item.customName ?? ""
+        overlay = .renameItem(itemID: item.id)
     }
 }
 
@@ -307,6 +328,8 @@ final class PanelController: NSObject, NSWindowDelegate {
             state.query = ""
         }
         state.selectedID = nil
+        // A drag the panel was hidden in the middle of never ended.
+        state.cancelDrag()
         // Before the overlay goes: the view gives the keyboard back to the field when one closes, and a panel that
         // was hidden with one open would do it now.
         state.hadSearchFocusBeforeOverlay = false
@@ -628,7 +651,7 @@ final class PanelController: NSObject, NSWindowDelegate {
                 break
             }
             return true
-        case .newTag, .renameTag:
+        case .newTag, .renameItem, .renameTag:
             // Return is handled by the text field's onSubmit.
             return sendEditShortcut(event)
         case .deleteTag:

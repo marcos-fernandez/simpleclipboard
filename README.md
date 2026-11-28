@@ -107,6 +107,13 @@ closing it by mistake does not lose them.
 next to "History", in its colour; right-click a tab to rename, recolour or delete it. Tagged items are kept until
 you delete them, and "Clear History…" leaves them alone.
 
+The cards of a tag can be put in any order: drag one to the place of another. A card that is given a tag goes first
+in it, and from then on the cards of a tag stay where they are whatever is copied or pasted; the history is always
+newest first.
+
+"Rename…" in the menu of a card gives it a name, shown in place of the app it was copied from and found by the
+search; an empty name takes it away. Not for the cards copied from the "Secured Apps".
+
 ### Share
 
 The selected card can be shared from the button at the end of the search row, and any card from its menu, through

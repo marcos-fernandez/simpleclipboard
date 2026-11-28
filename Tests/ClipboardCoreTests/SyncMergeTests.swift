@@ -40,6 +40,109 @@ struct SyncMergeTests {
         SyncMerge.merge(local: local, remotes: remotes, concealedHashes: concealed, now: now)
     }
 
+    func named(_ item: SyncItem, _ name: String?, changedAgo: TimeInterval) -> SyncItem {
+        var named = item
+        named.customName = name
+        named.customNameChangedAt = at(changedAgo)
+        return named
+    }
+
+    func ordered(_ tag: SyncTag, _ texts: [String], changedAgo: TimeInterval) -> SyncTag {
+        var ordered = tag
+        ordered.itemOrder = texts.map { "hash-\($0)" }
+        ordered.itemOrderChangedAt = at(changedAgo)
+        return ordered
+    }
+
+    // MARK: names and order
+
+    // As with the tag: taking the whole item from the newest copy would lose a name given on the other Mac.
+    @Test func copyingAgainOnOneMacKeepsTheNameGivenOnTheOther() {
+        let result = merge(
+            state("A", items: [named(item("hello", createdAgo: 1000), "Greeting", changedAgo: 50)]),
+            state("B", items: [item("hello", createdAgo: 10, app: "Notes")])
+        )
+        #expect(result.items.map(\.createdAt) == [at(10)])
+        #expect(result.items.map(\.sourceAppName) == ["Notes"])
+        #expect(result.items.map(\.customName) == ["Greeting"])
+        #expect(result.items.map(\.customNameChangedAt) == [at(50)])
+    }
+
+    @Test func theNewestChangeOfNameWins() {
+        let result = merge(
+            state("A", items: [named(item("hello", createdAgo: 1000), "Old", changedAgo: 50)]),
+            state("B", items: [named(item("hello", createdAgo: 1000), "New", changedAgo: 10)])
+        )
+        #expect(result.items.map(\.customName) == ["New"])
+    }
+
+    @Test func aNameTakenAwayLaterIsGoneOnEveryMac() {
+        let result = merge(
+            state("A", items: [named(item("hello", createdAgo: 1000), "Greeting", changedAgo: 50)]),
+            state("B", items: [named(item("hello", createdAgo: 1000), nil, changedAgo: 10)])
+        )
+        #expect(result.items.map(\.customName) == [nil])
+        #expect(result.items.map(\.customNameChangedAt) == [at(10)])
+    }
+
+    // An app from before names existed publishes the item without one: that is not a name taken away.
+    @Test func aMacThatKnowsNothingOfNamesDoesNotTakeThemAway() {
+        let result = merge(
+            state("A", items: [named(item("hello", createdAgo: 1000), "Greeting", changedAgo: 50)]),
+            state("B", items: [item("hello", createdAgo: 10)])
+        )
+        #expect(result.items.map(\.customName) == ["Greeting"])
+    }
+
+    // Unlike a copy or a tag: a Mac from before the names would not count it either, and the two have to end
+    // with the same items.
+    @Test func aNameGivenAfterADeletionDoesNotBringTheItemBack() {
+        let result = merge(
+            state("A", items: [named(item("hello", createdAgo: 1000), "Greeting", changedAgo: 10)]),
+            state("B", deletions: [.item("hash-hello", at: at(50))])
+        )
+        #expect(result.items.isEmpty)
+    }
+
+    // A rename of the tag on one Mac and a move of its items on the other: each has its own stamp, so neither is
+    // lost to the other.
+    @Test func renamingATagOnOneMacKeepsTheOrderGivenOnTheOther() {
+        let result = merge(
+            state("A", tags: [ordered(tag(work, "Work", changedAgo: 1000), ["two", "one"], changedAgo: 50)]),
+            state("B", tags: [tag(work, "Office", changedAgo: 10)])
+        )
+        #expect(result.tags.map(\.name) == ["Office"])
+        #expect(result.tags.map(\.itemOrder) == [["hash-two", "hash-one"]])
+        #expect(result.tags.map(\.itemOrderChangedAt) == [at(50)])
+    }
+
+    @Test func theNewestOrderOfATagWinsWhole() {
+        let result = merge(
+            state("A", tags: [ordered(tag(work, "Work"), ["two", "one"], changedAgo: 50)]),
+            state("B", tags: [ordered(tag(work, "Work"), ["one", "three", "two"], changedAgo: 10)])
+        )
+        #expect(result.tags.map(\.itemOrder) == [["hash-one", "hash-three", "hash-two"]])
+    }
+
+    @Test func theOrderDoesNotDependOnWhichMacMerges() {
+        let first = state("A", tags: [ordered(tag(work, "Work"), ["two", "one"], changedAgo: 50)])
+        let second = state("B", tags: [ordered(tag(work, "Work"), ["one", "two"], changedAgo: 50)])
+
+        #expect(merge(first, second).tags == merge(second, first).tags)
+    }
+
+    // The tag that stays keeps its order; the items of the other one come in as any item it does not list.
+    @Test func aTagFusedIntoItsNamesakeLeavesTheOrderOfTheOneThatStays() {
+        let result = merge(
+            state("A", tags: [ordered(tag(smaller, "Work"), ["two", "one"], changedAgo: 50)]),
+            state("B", tags: [ordered(tag(larger, "Work"), ["four", "three"], changedAgo: 10)])
+        )
+        #expect(result.tags.map(\.id) == [smaller])
+        #expect(result.tags.map(\.itemOrder) == [["hash-two", "hash-one"]])
+    }
+
+    // MARK: items
+
     @Test func newestCopyDecidesTheDateAndTheSourceApp() {
         let result = merge(
             state("A", items: [item("hello", createdAgo: 100, app: "Safari")]),

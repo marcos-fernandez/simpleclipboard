@@ -39,10 +39,21 @@ public struct ClipItem: Codable, Identifiable, Equatable, Sendable {
     public var tagID: UUID?
     /// When `tagID` was last set or cleared; nil in items saved before sync existed. Sync compares it across Macs.
     public var tagChangedAt: Date?
+    /// The name the user gave it, shown in place of the app it was copied from; nil = none. Concealed items are
+    /// never named.
+    public var customName: String?
+    /// When `customName` was last set or cleared; nil in items never named. Sync compares it across Macs.
+    public var customNameChangedAt: Date?
+
+    /// What the card is called: its name, or else the app it was copied from.
+    public var displayName: String? {
+        customName ?? sourceAppName
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, createdAt, kind, text, imageFileName, contentHash
         case sourceAppBundleID, sourceAppName, isConcealed, expiresAt, tagID, tagChangedAt
+        case customName, customNameChangedAt
     }
 
     public init(
@@ -57,7 +68,9 @@ public struct ClipItem: Codable, Identifiable, Equatable, Sendable {
         isConcealed: Bool,
         expiresAt: Date?,
         tagID: UUID? = nil,
-        tagChangedAt: Date? = nil
+        tagChangedAt: Date? = nil,
+        customName: String? = nil,
+        customNameChangedAt: Date? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -72,5 +85,7 @@ public struct ClipItem: Codable, Identifiable, Equatable, Sendable {
         self.expiresAt = expiresAt
         self.tagID = tagID
         self.tagChangedAt = tagChangedAt
+        self.customName = customName
+        self.customNameChangedAt = customNameChangedAt
     }
 }
